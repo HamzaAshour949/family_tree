@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { BriefcaseBusiness, CalendarDays, UserRound, UsersRound } from "lucide-react";
 import { lifeLabel, personName } from "../lib/family";
@@ -18,12 +18,8 @@ export interface PersonNodeData {
 export const PersonNode = memo((props: NodeProps) => {
   const data = props.data as unknown as PersonNodeData;
   const { familyText, t } = useI18n();
-  const initials = personName(data.person)
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const displayName = personName(data.person, familyText);
+  const initials = useMemo(() => initialsOf(displayName), [displayName]);
 
   return (
     <div className={`person-node-shell ${data.compact ? "compact" : ""}`}>
@@ -34,11 +30,11 @@ export const PersonNode = memo((props: NodeProps) => {
       <button className={`person-node ${data.compact ? "compact" : ""} ${data.selected ? "selected" : ""} gender-${data.person.gender}`} onClick={() => data.onSelect(data.person.id)} type="button">
         <div className="person-card-head">
           <div className="person-avatar">
-            {data.showPhotos && data.person.photoUrl ? <img alt="" src={data.person.photoUrl} /> : <span>{initials || <UserRound size={20} />}</span>}
+            <PersonAvatar initials={initials} photoUrl={data.showPhotos ? data.person.photoUrl : undefined} />
           </div>
           <span className={`gender-marker ${data.person.gender}`} aria-label={t(data.person.gender)}>{data.person.gender === "female" ? "F" : "M"}</span>
           <div>
-            <h3 className="person-name">{personName(data.person, familyText)}</h3>
+            <h3 className="person-name">{displayName}</h3>
             <p className="person-meta">{lifeLabel(data.person, familyText)}</p>
           </div>
         </div>
@@ -68,3 +64,22 @@ export const PersonNode = memo((props: NodeProps) => {
 });
 
 PersonNode.displayName = "PersonNode";
+
+/** Falls back to initials when a photo URL is missing or fails to load. */
+function PersonAvatar({ initials, photoUrl }: { initials: string; photoUrl?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (photoUrl && !failed) {
+    return <img alt="" loading="lazy" onError={() => setFailed(true)} referrerPolicy="no-referrer" src={photoUrl} />;
+  }
+  return <span>{initials || <UserRound size={20} />}</span>;
+}
+
+function initialsOf(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}

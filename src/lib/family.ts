@@ -17,6 +17,14 @@ export interface FamilyTextLabels {
   marriageRecorded: string;
 }
 
+export interface RelationshipCounts {
+  parents: number;
+  spouses: number;
+  children: number;
+}
+
+export type PersonDirectory = Map<string, Person>;
+
 export const defaultFamilyTextLabels: FamilyTextLabels = {
   unnamedPerson: "Unnamed person",
   datesUnknown: "Dates unknown",
@@ -33,6 +41,10 @@ export const defaultFamilyTextLabels: FamilyTextLabels = {
   birthRecorded: "Birth recorded",
   marriageRecorded: "Marriage relationship recorded",
 };
+
+export function peopleById(people: Person[]): PersonDirectory {
+  return new Map(people.map((person) => [person.id, person]));
+}
 
 export function personName(person: Person, labels: FamilyTextLabels = defaultFamilyTextLabels): string {
   const name = `${person.firstName} ${person.lastName}`.trim();
@@ -56,108 +68,161 @@ export function lifeLabel(person: Person, labels: FamilyTextLabels = defaultFami
 
 export function ageLabel(person: Person, labels: FamilyTextLabels = defaultFamilyTextLabels): string {
   const born = person.birthDate ? new Date(person.birthDate) : undefined;
-  const ended = person.deathDate ? new Date(person.deathDate) : new Date();
   if (!born || Number.isNaN(born.getTime())) return labels.ageUnknown;
+  const ended = person.deathDate ? new Date(person.deathDate) : new Date();
+  if (Number.isNaN(ended.getTime())) return labels.ageUnknown;
+
   let age = ended.getFullYear() - born.getFullYear();
   const beforeBirthday = ended.getMonth() < born.getMonth() || (ended.getMonth() === born.getMonth() && ended.getDate() < born.getDate());
   if (beforeBirthday) age -= 1;
+  if (age < 0) return labels.ageUnknown;
   return labels.ageYears(age, Boolean(person.deathDate));
 }
 
-export function relationshipCounts(project: FamilyTreeProject, personId: string) {
-  const parents = project.relationships.filter((relationship) => relationship.type === "parent-child" && relationship.to === personId).length;
-  const children = project.relationships.filter((relationship) => relationship.type === "parent-child" && relationship.from === personId).length;
-  const spouses = project.relationships.filter((relationship) => relationship.type === "spouse" && (relationship.from === personId || relationship.to === personId)).length;
-  return { parents, spouses, children };
+/**
+ * Counts every person's links in a single pass. Calling a per-person counter
+ * inside a render loop is quadratic on large trees; this is linear.
+ */
+export function relationshipCountsById(people: Person[], relationships: Relationship[]): Map<string, RelationshipCounts> {
+  const counts = new Map<string, RelationshipCounts>(people.map((person) => [person.id, { parents: 0, spouses: 0, children: 0 }]));
+  for (const relationship of relationships) {
+    const from = counts.get(relationship.from);
+    const to = counts.get(relationship.to);
+    if (relationship.type === "spouse") {
+      if (from) from.spouses += 1;
+      if (to) to.spouses += 1;
+      continue;
+    }
+    if (from) from.children += 1;
+    if (to) to.parents += 1;
+  }
+  return counts;
 }
 
-export function filteredPeople(project: FamilyTreeProject, searchQuery: string, genderFilter: Gender | "all") {
+export function totalLinks(counts: RelationshipCounts | undefined): number {
+  return counts ? counts.parents + counts.spouses + counts.children : 0;
+}
+
+export function filteredPeople(people: Person[], searchQuery: string, genderFilter: Gender | "all"): Person[] {
   const normalized = searchQuery.trim().toLowerCase();
-  return project.people.filter((person) => {
-    const matchesGender = genderFilter === "all" || person.gender === genderFilter;
-    const searchBlob = [personName(person), person.birthPlace, person.deathPlace, person.occupation, person.notes, person.tags.join(" ")]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return matchesGender && (normalized.length === 0 || searchBlob.includes(normalized));
+  return people.filter((person) => {
+    if (genderFilter !== "all" && person.gender !== genderFilter) return false;
+    if (normalized.length === 0) return true;
+    return searchBlob(person).includes(normalized);
   });
 }
 
-export function generationMap(project: FamilyTreeProject): Map<string, number> {
-  const generation = new Map(project.people.map((person) => [person.id, 0]));
-  const parentEdges = project.relationships.filter((relationship) => relationship.type === "parent-child");
-  for (let pass = 0; pass < project.people.length; pass += 1) {
+function searchBlob(person: Person): string {
+  return [personName(person), person.birthPlace, person.deathPlace, person.occupation, person.notes, person.tags.join(" ")]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+/**
+ * Assigns each person a depth: children always sit one row below their deepest
+ * parent, and spouses are pulled onto the shallower partner's row.
+ */
+export function generationMap(people: Person[], relationships: Relationship[]): Map<string, number> {
+  const generation = new Map(people.map((person) => [person.id, 0]));
+  const parentEdges = relationships.filter((relationship) => relationship.type === "parent-child");
+
+  for (let pass = 0; pass < people.length; pass += 1) {
     let changed = false;
     for (const edge of parentEdges) {
       const parentGeneration = generation.get(edge.from) ?? 0;
-      const nextGeneration = Math.max(generation.get(edge.to) ?? 0, parentGeneration + 1);
-      if (nextGeneration !== generation.get(edge.to)) {
-        generation.set(edge.to, nextGeneration);
+      const current = generation.get(edge.to) ?? 0;
+      if (parentGeneration + 1 > current) {
+        generation.set(edge.to, parentGeneration + 1);
         changed = true;
       }
     }
     if (!changed) break;
   }
-  for (const spouse of project.relationships.filter((relationship) => relationship.type === "spouse")) {
-    const sharedGeneration = Math.min(generation.get(spouse.from) ?? 0, generation.get(spouse.to) ?? 0);
-    generation.set(spouse.from, sharedGeneration);
-    generation.set(spouse.to, sharedGeneration);
+
+  for (const spouse of relationships) {
+    if (spouse.type !== "spouse") continue;
+    const shared = Math.min(generation.get(spouse.from) ?? 0, generation.get(spouse.to) ?? 0);
+    generation.set(spouse.from, shared);
+    generation.set(spouse.to, shared);
   }
   return generation;
 }
 
-export function relatedPeople(project: FamilyTreeProject, personId: string) {
-  const peopleById = new Map(project.people.map((person) => [person.id, person]));
+export function relatedPeople(directory: PersonDirectory, relationships: Relationship[], personId: string) {
   const parents: Person[] = [];
   const children: Person[] = [];
   const spouses: Person[] = [];
-  for (const relationship of project.relationships) {
-    if (relationship.type === "parent-child" && relationship.to === personId) {
-      const parent = peopleById.get(relationship.from);
-      if (parent) parents.push(parent);
+  for (const relationship of relationships) {
+    if (relationship.type === "parent-child") {
+      if (relationship.to === personId) push(parents, directory.get(relationship.from));
+      else if (relationship.from === personId) push(children, directory.get(relationship.to));
+      continue;
     }
-    if (relationship.type === "parent-child" && relationship.from === personId) {
-      const child = peopleById.get(relationship.to);
-      if (child) children.push(child);
-    }
-    if (relationship.type === "spouse") {
-      const spouseId = relationship.from === personId ? relationship.to : relationship.to === personId ? relationship.from : undefined;
-      const spouse = spouseId ? peopleById.get(spouseId) : undefined;
-      if (spouse) spouses.push(spouse);
-    }
+    if (relationship.from === personId) push(spouses, directory.get(relationship.to));
+    else if (relationship.to === personId) push(spouses, directory.get(relationship.from));
   }
   return { parents, spouses, children };
 }
 
-export function relationshipLabel(project: FamilyTreeProject, relationship: Relationship, labels: FamilyTextLabels = defaultFamilyTextLabels): string {
-  const peopleById = new Map(project.people.map((person) => [person.id, person]));
-  const from = peopleById.get(relationship.from);
-  const to = peopleById.get(relationship.to);
+function push(target: Person[], person: Person | undefined): void {
+  if (person) target.push(person);
+}
+
+export function relationshipLabel(directory: PersonDirectory, relationship: Relationship, labels: FamilyTextLabels = defaultFamilyTextLabels): string {
+  const from = directory.get(relationship.from);
+  const to = directory.get(relationship.to);
   const fromName = from ? personName(from, labels) : labels.unknownPerson;
   const toName = to ? personName(to, labels) : labels.unknownPerson;
-  return relationship.type === "parent-child" ? `${fromName} -> ${toName}` : `${fromName} + ${toName}`;
+  return relationship.type === "parent-child" ? `${fromName} → ${toName}` : `${fromName} + ${toName}`;
 }
 
 export function timelineEvents(project: FamilyTreeProject, labels: FamilyTextLabels = defaultFamilyTextLabels): TimelineEvent[] {
   const events: TimelineEvent[] = [];
-  const peopleById = new Map(project.people.map((person) => [person.id, person]));
+  const directory = peopleById(project.people);
+
   for (const person of project.people) {
     const birthYear = yearFromDate(person.birthDate);
     if (birthYear) {
-      events.push({ id: `${person.id}-birth`, year: birthYear, date: person.birthDate, title: labels.birthEventTitle(personName(person, labels)), personId: person.id, kind: "birth", detail: person.birthPlace ? labels.birthplaceDetail(person.birthPlace) : labels.birthRecorded });
+      events.push({
+        id: `${person.id}-birth`,
+        year: birthYear,
+        date: person.birthDate,
+        title: labels.birthEventTitle(personName(person, labels)),
+        personId: person.id,
+        kind: "birth",
+        detail: person.birthPlace ? labels.birthplaceDetail(person.birthPlace) : labels.birthRecorded,
+      });
     }
     const deathYear = yearFromDate(person.deathDate);
     if (deathYear) {
-      events.push({ id: `${person.id}-death`, year: deathYear, date: person.deathDate, title: labels.deathEventTitle(personName(person, labels)), personId: person.id, kind: "death", detail: person.deathPlace ? labels.deathPlaceDetail(person.deathPlace) : ageLabel(person, labels) });
+      events.push({
+        id: `${person.id}-death`,
+        year: deathYear,
+        date: person.deathDate,
+        title: labels.deathEventTitle(personName(person, labels)),
+        personId: person.id,
+        kind: "death",
+        detail: person.deathPlace ? labels.deathPlaceDetail(person.deathPlace) : ageLabel(person, labels),
+      });
     }
   }
-  for (const relationship of project.relationships.filter((item) => item.type === "spouse" && item.date)) {
+
+  for (const relationship of project.relationships) {
+    if (relationship.type !== "spouse" || !relationship.date) continue;
     const year = yearFromDate(relationship.date);
-    const first = peopleById.get(relationship.from);
-    const second = peopleById.get(relationship.to);
-    if (year && first && second) {
-      events.push({ id: `${relationship.id}-marriage`, year, date: relationship.date, title: labels.marriageEventTitle(personName(first, labels), personName(second, labels)), kind: "marriage", detail: labels.marriageRecorded });
-    }
+    const first = directory.get(relationship.from);
+    const second = directory.get(relationship.to);
+    if (!year || !first || !second) continue;
+    events.push({
+      id: `${relationship.id}-marriage`,
+      year,
+      date: relationship.date,
+      title: labels.marriageEventTitle(personName(first, labels), personName(second, labels)),
+      kind: "marriage",
+      detail: labels.marriageRecorded,
+    });
   }
+
   return events.sort((first, second) => first.year - second.year || first.title.localeCompare(second.title));
 }

@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { CalendarDays } from "lucide-react";
 import { useI18n } from "../i18n";
-import { personName, timelineEvents } from "../lib/family";
+import { peopleById, personName, timelineEvents } from "../lib/family";
 import { useFamilyStore } from "../store/familyStore";
 
 export function TimelineView() {
@@ -8,27 +9,44 @@ export function TimelineView() {
   const project = useFamilyStore((state) => state.project);
   const selectPerson = useFamilyStore((state) => state.selectPerson);
   const setActiveView = useFamilyStore((state) => state.setActiveView);
-  const peopleById = new Map(project.people.map((person) => [person.id, person]));
-  const events = timelineEvents(project, familyText);
-  const lastEvent = events[events.length - 1];
+
+  const directory = useMemo(() => peopleById(project.people), [project.people]);
+  const events = useMemo(() => timelineEvents(project, familyText), [familyText, project]);
+  const firstYear = events[0]?.year;
+  const lastYear = events[events.length - 1]?.year;
+
+  function openPerson(personId?: string) {
+    if (!personId) return;
+    selectPerson(personId);
+    setActiveView("tree");
+  }
 
   return (
     <section className="timeline-shell">
       <div className="timeline-header">
         <div>
           <h2 className="timeline-title">{t("timeline")}</h2>
-          <p className="muted-text">{events.length} {t("datedEventsAcross")} {project.people.length} {t("peopleLower")}</p>
+          <p className="muted-text">
+            {events.length} {t("datedEventsAcross")} {project.people.length} {t("peopleLower")}
+          </p>
         </div>
-        <span className="status-chip"><CalendarDays size={14} />{events[0]?.year ?? t("noDates")} {events.length > 1 ? `${t("to")} ${lastEvent?.year}` : ""}</span>
+        <span className="status-chip">
+          <CalendarDays size={14} />
+          {firstYear ?? t("noDates")}
+          {events.length > 1 && lastYear !== firstYear ? ` ${t("to")} ${lastYear}` : ""}
+        </span>
       </div>
 
       <div className="timeline-list">
         {events.map((event) => {
-          const person = event.personId ? peopleById.get(event.personId) : undefined;
+          const person = event.personId ? directory.get(event.personId) : undefined;
           return (
-            <button className="timeline-event list-row interactive" key={event.id} onClick={() => { if (event.personId) { selectPerson(event.personId); setActiveView("tree"); } }} type="button">
+            <button className="timeline-event list-row interactive" key={event.id} onClick={() => openPerson(event.personId)} type="button">
               <span className="timeline-year">{event.year}</span>
-              <span><strong>{event.title}</strong><span className="muted-text">{event.detail}</span></span>
+              <span>
+                <strong>{event.title}</strong>
+                <span className="muted-text">{event.detail}</span>
+              </span>
               <span className="status-chip">{person ? personName(person, familyText) : event.kind}</span>
             </button>
           );

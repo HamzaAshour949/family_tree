@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { CalendarClock, Network, Plus, UsersRound } from "lucide-react";
 import { useI18n } from "../i18n";
 import { timelineEvents } from "../lib/family";
@@ -8,7 +9,7 @@ export function ProjectPanel() {
   const addPerson = useFamilyStore((state) => state.addPerson);
   const project = useFamilyStore((state) => state.project);
   const updateProjectMeta = useFamilyStore((state) => state.updateProjectMeta);
-  const events = timelineEvents(project, familyText);
+  const eventCount = useMemo(() => timelineEvents(project, familyText).length, [familyText, project]);
 
   return (
     <>
@@ -22,11 +23,11 @@ export function ProjectPanel() {
         <div className="field-stack">
           <label className="field-label">
             {t("name")}
-            <input onChange={(event) => updateProjectMeta({ name: event.currentTarget.value, description: project.description })} value={project.name} />
+            <input onChange={(event) => updateProjectMeta({ name: event.currentTarget.value })} value={project.name} />
           </label>
           <label className="field-label">
             {t("description")}
-            <textarea onChange={(event) => updateProjectMeta({ name: project.name, description: event.currentTarget.value })} value={project.description} />
+            <textarea onChange={(event) => updateProjectMeta({ description: event.currentTarget.value })} value={project.description} />
           </label>
         </div>
       </section>
@@ -45,7 +46,7 @@ export function ProjectPanel() {
           </div>
           <div className="metric-tile">
             <CalendarClock size={16} />
-            <span className="metric-value">{events.length}</span>
+            <span className="metric-value">{eventCount}</span>
             <span className="metric-label">{t("events")}</span>
           </div>
         </div>

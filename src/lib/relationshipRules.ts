@@ -1,4 +1,4 @@
-import type { FamilyTreeProject, Relationship } from "../types";
+import type { FamilyTreeProject, Gender, Person, Relationship } from "../types";
 
 export type RelationshipRuleCode =
   | "relationshipNotAllowedDuplicate"
@@ -12,104 +12,129 @@ export type RelationshipRuleCode =
 
 export type RelationshipValidationResult = { ok: true } | { ok: false; reason: RelationshipRuleCode };
 
+export const MAX_LIVING_WIVES = 4;
+
+/**
+ * Indexes built once per validation. The rules cross-reference ancestry
+ * several times, and rebuilding the parent map inside each check turned a
+ * single validation into a handful of full passes over the relationship list.
+ */
+interface RuleContext {
+  people: Map<string, Person>;
+  parentsByChild: Map<string, string[]>;
+  relationships: Relationship[];
+}
+
 export function validateRelationship(project: FamilyTreeProject, relationship: Omit<Relationship, "id">): RelationshipValidationResult {
   if (relationship.from === relationship.to) return blocked("relationshipNotAllowedSelf");
-  if (relationshipExists(project, relationship)) return blocked("relationshipNotAllowedDuplicate");
-  if (relationship.type === "parent-child") return validateParentChild(project, relationship.from, relationship.to);
-  return validateSpouse(project, relationship.from, relationship.to);
+
+  const context = buildContext(project);
+  if (relationshipExists(context, relationship)) return blocked("relationshipNotAllowedDuplicate");
+  return relationship.type === "parent-child"
+    ? validateParentChild(context, relationship.from, relationship.to)
+    : validateSpouse(context, relationship.from, relationship.to);
 }
 
-function validateParentChild(project: FamilyTreeProject, parentId: string, childId: string): RelationshipValidationResult {
-  const parent = project.people.find((person) => person.id === parentId);
-  if (!parent) return blocked("relationshipNotAllowedParentGenderSlot");
-  if (hasSpouseRelationship(project, parentId, childId)) return blocked("relationshipNotAllowedExistingParentChild");
-  if (isAncestorOf(project, childId, parentId)) return blocked("relationshipNotAllowedCycle");
-  if (hasParentOfSameGender(project, childId, parent.gender)) return blocked("relationshipNotAllowedParentGenderSlot");
-  return { ok: true };
-}
-
-function validateSpouse(project: FamilyTreeProject, firstId: string, secondId: string): RelationshipValidationResult {
-  const first = project.people.find((person) => person.id === firstId);
-  const second = project.people.find((person) => person.id === secondId);
-  if (!first || !second || first.gender === second.gender) return blocked("relationshipNotAllowedSpouseGender");
-  if (hasParentChildRelationship(project, firstId, secondId)) return blocked("relationshipNotAllowedExistingParentChild");
-  if (areCloseKin(project, firstId, secondId)) return blocked("relationshipNotAllowedCloseKin");
-  if (wouldExceedAliveWifeLimit(project, first.id, second.id)) return blocked("relationshipNotAllowedAliveWivesLimit");
-  return { ok: true };
-}
-
-function wouldExceedAliveWifeLimit(project: FamilyTreeProject, firstId: string, secondId: string): boolean {
-  const peopleById = new Map(project.people.map((person) => [person.id, person]));
-  const first = peopleById.get(firstId);
-  const second = peopleById.get(secondId);
-  const man = first?.gender === "male" ? first : second?.gender === "male" ? second : undefined;
-  const woman = first?.gender === "female" ? first : second?.gender === "female" ? second : undefined;
-  if (!man || !woman || woman.deathDate) return false;
-  const aliveWives = new Set<string>();
+function buildContext(project: FamilyTreeProject): RuleContext {
+  const parentsByChild = new Map<string, string[]>();
   for (const relationship of project.relationships) {
-    if (relationship.type !== "spouse" || (relationship.from !== man.id && relationship.to !== man.id)) continue;
-    const spouseId = relationship.from === man.id ? relationship.to : relationship.from;
-    const spouse = peopleById.get(spouseId);
-    if (spouse?.gender === "female" && !spouse.deathDate) aliveWives.add(spouse.id);
+    if (relationship.type !== "parent-child") continue;
+    const parents = parentsByChild.get(relationship.to);
+    if (parents) parents.push(relationship.from);
+    else parentsByChild.set(relationship.to, [relationship.from]);
   }
-  return aliveWives.size + 1 > 4;
+  return {
+    people: new Map(project.people.map((person) => [person.id, person])),
+    parentsByChild,
+    relationships: project.relationships,
+  };
 }
 
-function hasParentOfSameGender(project: FamilyTreeProject, childId: string, gender: "female" | "male"): boolean {
-  const peopleById = new Map(project.people.map((person) => [person.id, person]));
-  return project.relationships.some((relationship) => relationship.type === "parent-child" && relationship.to === childId && peopleById.get(relationship.from)?.gender === gender);
+function validateParentChild(context: RuleContext, parentId: string, childId: string): RelationshipValidationResult {
+  const parent = context.people.get(parentId);
+  if (!parent || !context.people.has(childId)) return blocked("relationshipNotAllowedSelf");
+  if (hasLink(context, "spouse", parentId, childId)) return blocked("relationshipNotAllowedExistingParentChild");
+  if (isAncestorOf(context, childId, parentId)) return blocked("relationshipNotAllowedCycle");
+  if (hasParentOfGender(context, childId, parent.gender)) return blocked("relationshipNotAllowedParentGenderSlot");
+  return { ok: true };
 }
 
-function relationshipExists(project: FamilyTreeProject, relationship: Omit<Relationship, "id">): boolean {
-  return project.relationships.some(
-    (item) => item.type === relationship.type && ((item.from === relationship.from && item.to === relationship.to) || (relationship.type === "spouse" && item.from === relationship.to && item.to === relationship.from)),
+function validateSpouse(context: RuleContext, firstId: string, secondId: string): RelationshipValidationResult {
+  const first = context.people.get(firstId);
+  const second = context.people.get(secondId);
+  if (!first || !second || first.gender === second.gender) return blocked("relationshipNotAllowedSpouseGender");
+  if (hasLink(context, "parent-child", firstId, secondId)) return blocked("relationshipNotAllowedExistingParentChild");
+  if (areCloseKin(context, firstId, secondId)) return blocked("relationshipNotAllowedCloseKin");
+  if (wouldExceedLivingWifeLimit(context, first, second)) return blocked("relationshipNotAllowedAliveWivesLimit");
+  return { ok: true };
+}
+
+function wouldExceedLivingWifeLimit(context: RuleContext, first: Person, second: Person): boolean {
+  const man = first.gender === "male" ? first : second;
+  const woman = first.gender === "female" ? first : second;
+  if (man.gender !== "male" || woman.gender !== "female" || woman.deathDate) return false;
+
+  const livingWives = new Set<string>();
+  for (const relationship of context.relationships) {
+    if (relationship.type !== "spouse") continue;
+    if (relationship.from !== man.id && relationship.to !== man.id) continue;
+    const spouse = context.people.get(relationship.from === man.id ? relationship.to : relationship.from);
+    if (spouse?.gender === "female" && !spouse.deathDate) livingWives.add(spouse.id);
+  }
+  return livingWives.size + 1 > MAX_LIVING_WIVES;
+}
+
+function hasParentOfGender(context: RuleContext, childId: string, gender: Gender): boolean {
+  return (context.parentsByChild.get(childId) ?? []).some((parentId) => context.people.get(parentId)?.gender === gender);
+}
+
+/**
+ * A duplicate parent-child link is direction-sensitive (A is B's parent is not
+ * the same claim as B is A's parent), while a spouse link is not.
+ */
+function relationshipExists(context: RuleContext, relationship: Omit<Relationship, "id">): boolean {
+  return hasLink(context, relationship.type, relationship.from, relationship.to, relationship.type === "spouse");
+}
+
+function hasLink(context: RuleContext, type: Relationship["type"], firstId: string, secondId: string, symmetric = true): boolean {
+  return context.relationships.some((relationship) => {
+    if (relationship.type !== type) return false;
+    if (relationship.from === firstId && relationship.to === secondId) return true;
+    return symmetric && relationship.from === secondId && relationship.to === firstId;
+  });
+}
+
+function areCloseKin(context: RuleContext, firstId: string, secondId: string): boolean {
+  return (
+    isAncestorOf(context, firstId, secondId) ||
+    isAncestorOf(context, secondId, firstId) ||
+    areSiblings(context, firstId, secondId) ||
+    isAuntOrUncleOf(context, firstId, secondId) ||
+    isAuntOrUncleOf(context, secondId, firstId)
   );
 }
 
-function hasParentChildRelationship(project: FamilyTreeProject, firstId: string, secondId: string): boolean {
-  return project.relationships.some((relationship) => relationship.type === "parent-child" && ((relationship.from === firstId && relationship.to === secondId) || (relationship.from === secondId && relationship.to === firstId)));
-}
-
-function hasSpouseRelationship(project: FamilyTreeProject, firstId: string, secondId: string): boolean {
-  return project.relationships.some((relationship) => relationship.type === "spouse" && ((relationship.from === firstId && relationship.to === secondId) || (relationship.from === secondId && relationship.to === firstId)));
-}
-
-function areCloseKin(project: FamilyTreeProject, firstId: string, secondId: string): boolean {
-  return isAncestorOf(project, firstId, secondId) || isAncestorOf(project, secondId, firstId) || areSiblings(project, firstId, secondId) || isAuntOrUncleOf(project, firstId, secondId) || isAuntOrUncleOf(project, secondId, firstId);
-}
-
-function isAncestorOf(project: FamilyTreeProject, ancestorId: string, personId: string): boolean {
-  const parentsByChild = parentsMap(project);
-  const queue = [...(parentsByChild.get(personId) ?? [])];
+function isAncestorOf(context: RuleContext, ancestorId: string, personId: string): boolean {
+  const queue = [...(context.parentsByChild.get(personId) ?? [])];
   const seen = new Set<string>();
   while (queue.length > 0) {
     const parentId = queue.shift();
     if (!parentId || seen.has(parentId)) continue;
     if (parentId === ancestorId) return true;
     seen.add(parentId);
-    queue.push(...(parentsByChild.get(parentId) ?? []));
+    queue.push(...(context.parentsByChild.get(parentId) ?? []));
   }
   return false;
 }
 
-function areSiblings(project: FamilyTreeProject, firstId: string, secondId: string): boolean {
-  const parentsByChild = parentsMap(project);
-  const firstParents = new Set(parentsByChild.get(firstId) ?? []);
-  return (parentsByChild.get(secondId) ?? []).some((parentId) => firstParents.has(parentId));
+function areSiblings(context: RuleContext, firstId: string, secondId: string): boolean {
+  const firstParents = new Set(context.parentsByChild.get(firstId) ?? []);
+  if (firstParents.size === 0) return false;
+  return (context.parentsByChild.get(secondId) ?? []).some((parentId) => firstParents.has(parentId));
 }
 
-function isAuntOrUncleOf(project: FamilyTreeProject, possibleAuntOrUncleId: string, personId: string): boolean {
-  const parentsByChild = parentsMap(project);
-  return (parentsByChild.get(personId) ?? []).some((parentId) => areSiblings(project, possibleAuntOrUncleId, parentId));
-}
-
-function parentsMap(project: FamilyTreeProject): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const relationship of project.relationships) {
-    if (relationship.type !== "parent-child") continue;
-    map.set(relationship.to, [...(map.get(relationship.to) ?? []), relationship.from]);
-  }
-  return map;
+function isAuntOrUncleOf(context: RuleContext, candidateId: string, personId: string): boolean {
+  return (context.parentsByChild.get(personId) ?? []).some((parentId) => areSiblings(context, candidateId, parentId));
 }
 
 function blocked(reason: RelationshipRuleCode): RelationshipValidationResult {
