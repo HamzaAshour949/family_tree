@@ -1,76 +1,91 @@
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { toPng, toSvg } from "html-to-image";
-import { jsPDF } from "jspdf";
+import { desktop } from "./desktop";
 import { safeFileName } from "./projectIO";
+import type { ExportFormat } from "../../electron/shared";
 
-export type ExportFormat = "png" | "svg" | "pdf";
+export type { ExportFormat };
+
+const EXPORT_PADDING = 56;
+const MIN_EXPORT_WIDTH = 900;
+const MIN_EXPORT_HEIGHT = 640;
+
+interface PreparedExport {
+  host: HTMLDivElement;
+  surface: HTMLElement;
+  width: number;
+  height: number;
+}
 
 export async function exportTreeElement(element: HTMLElement, projectName: string, format: ExportFormat): Promise<string | null> {
-  const selected = await save({ defaultPath: `${safeFileName(projectName)}.${format}`, filters: [{ name: format.toUpperCase(), extensions: [format] }] });
-  if (!selected) return null;
   const prepared = prepareExportElement(element);
   document.body.appendChild(prepared.host);
   try {
     await document.fonts.ready;
     await nextFrame();
     await nextFrame();
-    if (format === "svg") {
-      const svgDataUrl = await toSvg(prepared.surface, exportOptions(prepared.width, prepared.height));
-      await writeTextFile(selected, decodeSvgDataUrl(svgDataUrl));
-      return selected;
-    }
-    const pngDataUrl = await toPng(prepared.surface, exportOptions(prepared.width, prepared.height));
-    if (format === "png") {
-      await writeFile(selected, dataUrlToBytes(pngDataUrl));
-      return selected;
-    }
-    const width = prepared.width;
-    const height = prepared.height;
-    const pdf = new jsPDF({ orientation: width >= height ? "landscape" : "portrait", unit: "px", format: [width, height] });
-    pdf.addImage(pngDataUrl, "PNG", 0, 0, width, height);
-    await writeFile(selected, new Uint8Array(pdf.output("arraybuffer")));
-    return selected;
+    const data = await renderExport(prepared, format);
+    return await desktop().exportFile({ data, format, suggestedName: safeFileName(projectName) });
   } finally {
     prepared.host.remove();
   }
 }
 
-function prepareExportElement(element: HTMLElement): { host: HTMLDivElement; surface: HTMLElement; width: number; height: number } {
-  const padding = 56;
+/**
+ * The rasteriser and the PDF writer together weigh more than the editor
+ * itself, so they are pulled in only when an export actually runs.
+ */
+async function renderExport(prepared: PreparedExport, format: ExportFormat): Promise<string | Uint8Array> {
+  const { toPng, toSvg } = await import("html-to-image");
+  const options = exportOptions(prepared.width, prepared.height);
+  if (format === "svg") return decodeSvgDataUrl(await toSvg(prepared.surface, options));
+
+  const pngDataUrl = await toPng(prepared.surface, options);
+  if (format === "png") return dataUrlToBytes(pngDataUrl);
+
+  const { jsPDF } = await import("jspdf");
+  const { width, height } = prepared;
+  const pdf = new jsPDF({ orientation: width >= height ? "landscape" : "portrait", unit: "px", format: [width, height] });
+  pdf.addImage(pngDataUrl, "PNG", 0, 0, width, height);
+  return new Uint8Array(pdf.output("arraybuffer"));
+}
+
+/**
+ * Clones the live canvas into an off-screen host sized to the tree's bounding
+ * box, so exports capture the whole family rather than the current viewport.
+ */
+function prepareExportElement(element: HTMLElement): PreparedExport {
   const nodeBounds = flowNodeBounds(element);
-  const width = Math.ceil(Math.max(900, (nodeBounds?.width ?? element.clientWidth) + padding * 2));
-  const height = Math.ceil(Math.max(640, (nodeBounds?.height ?? element.clientHeight) + padding * 2));
+  const width = Math.ceil(Math.max(MIN_EXPORT_WIDTH, (nodeBounds?.width ?? element.clientWidth) + EXPORT_PADDING * 2));
+  const height = Math.ceil(Math.max(MIN_EXPORT_HEIGHT, (nodeBounds?.height ?? element.clientHeight) + EXPORT_PADDING * 2));
+
   const host = document.createElement("div");
   host.className = "export-host";
-  host.style.position = "fixed";
-  host.style.left = "-100000px";
-  host.style.top = "0";
-  host.style.width = `${width}px`;
-  host.style.height = `${height}px`;
-  host.style.overflow = "hidden";
-  host.style.pointerEvents = "none";
+  Object.assign(host.style, {
+    position: "fixed",
+    left: "-100000px",
+    top: "0",
+    width: `${width}px`,
+    height: `${height}px`,
+    overflow: "hidden",
+    pointerEvents: "none",
+  } satisfies Partial<CSSStyleDeclaration>);
 
   const surface = element.cloneNode(true) as HTMLElement;
   surface.classList.add("is-exporting");
-  surface.style.width = `${width}px`;
-  surface.style.height = `${height}px`;
-  surface.style.minHeight = `${height}px`;
-  surface.style.overflow = "hidden";
+  Object.assign(surface.style, {
+    width: `${width}px`,
+    height: `${height}px`,
+    minHeight: `${height}px`,
+    overflow: "hidden",
+  } satisfies Partial<CSSStyleDeclaration>);
 
-  const flow = surface.querySelector<HTMLElement>(".react-flow");
-  if (flow) {
-    flow.style.width = `${width}px`;
-    flow.style.height = `${height}px`;
-  }
-  for (const item of surface.querySelectorAll<HTMLElement>(".react-flow__renderer, .react-flow__pane, .react-flow__viewport, .react-flow__container")) {
+  for (const item of surface.querySelectorAll<HTMLElement>(".react-flow, .react-flow__renderer, .react-flow__pane, .react-flow__viewport, .react-flow__container")) {
     item.style.width = `${width}px`;
     item.style.height = `${height}px`;
   }
 
   if (nodeBounds) {
     const viewport = surface.querySelector<HTMLElement>(".react-flow__viewport");
-    if (viewport) viewport.style.transform = `translate(${padding - nodeBounds.minX}px, ${padding - nodeBounds.minY}px) scale(1)`;
+    if (viewport) viewport.style.transform = `translate(${EXPORT_PADDING - nodeBounds.minX}px, ${EXPORT_PADDING - nodeBounds.minY}px) scale(1)`;
   }
 
   host.appendChild(surface);
@@ -78,25 +93,26 @@ function prepareExportElement(element: HTMLElement): { host: HTMLDivElement; sur
 }
 
 function flowNodeBounds(element: HTMLElement): { minX: number; minY: number; width: number; height: number } | undefined {
-  const nodes = [...element.querySelectorAll<HTMLElement>(".react-flow__node")];
+  const nodes = element.querySelectorAll<HTMLElement>(".react-flow__node");
   if (nodes.length === 0) return undefined;
-  const rects = nodes.map((node) => {
-    const position = parseTranslate(node.style.transform || node.getAttribute("style") || "");
-    return { x: position.x, y: position.y, width: node.offsetWidth, height: node.offsetHeight };
-  });
-  const minX = Math.min(...rects.map((rect) => rect.x));
-  const minY = Math.min(...rects.map((rect) => rect.y));
-  const maxX = Math.max(...rects.map((rect) => rect.x + rect.width));
-  const maxY = Math.max(...rects.map((rect) => rect.y + rect.height));
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const node of nodes) {
+    const { x, y } = parseTranslate(node.style.transform);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + node.offsetWidth);
+    maxY = Math.max(maxY, y + node.offsetHeight);
+  }
   return { minX, minY, width: maxX - minX, height: maxY - minY };
 }
 
-function parseTranslate(value: string): { x: number; y: number } {
-  const translate = value.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
-  if (translate) return { x: Number(translate[1]), y: Number(translate[2]) };
-  const translate3d = value.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);
-  if (translate3d) return { x: Number(translate3d[1]), y: Number(translate3d[2]) };
-  return { x: 0, y: 0 };
+export function parseTranslate(value: string): { x: number; y: number } {
+  const match = value.match(/translate(?:3d)?\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px/);
+  return match ? { x: Number(match[1]), y: Number(match[2]) } : { x: 0, y: 0 };
 }
 
 function exportOptions(width: number, height: number) {
@@ -110,8 +126,8 @@ function exportOptions(width: number, height: number) {
   };
 }
 
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const base64 = dataUrl.split(",")[1] ?? "";
+export function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
   const binary = window.atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
@@ -119,8 +135,7 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 }
 
 function decodeSvgDataUrl(dataUrl: string): string {
-  const encoded = dataUrl.split(",")[1] ?? "";
-  return decodeURIComponent(encoded);
+  return decodeURIComponent(dataUrl.slice(dataUrl.indexOf(",") + 1));
 }
 
 function nextFrame(): Promise<void> {
