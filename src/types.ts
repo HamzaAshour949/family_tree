@@ -5,8 +5,6 @@ export type RelationshipKind = "parent-child" | "spouse";
 export type ThemeMode = "dark" | "light";
 export type LanguageCode = "en" | "ar";
 export type ActiveView = "tree" | "timeline";
-export type LicenseTier = "empty" | "trial" | "full";
-export type LicenseStatus = "inactive" | "active" | "revoked" | "expired" | "offline";
 
 export interface Person {
   id: string;
@@ -50,20 +48,6 @@ export interface FamilyTreeProject {
   settings: ProjectSettings;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface LicenseState {
-  tier: LicenseTier;
-  status: LicenseStatus;
-  serialKey?: string;
-  customerEmail?: string;
-  activatedAt?: string;
-  expiresAt?: string;
-  lastVerifiedAt?: string;
-  deviceId?: string;
-  fullVersionUrl?: string;
-  artifactSha256?: string;
-  message?: string;
 }
 
 export interface TimelineEvent {

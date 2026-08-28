@@ -1,29 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import { ActivationGate, FullVersionGate } from "./components/ActivationGate";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Inspector } from "./components/Inspector";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { TimelineView } from "./components/TimelineView";
 import { Toolbar } from "./components/Toolbar";
 import { TreeCanvas } from "./components/TreeCanvas";
-import { useI18n } from "./i18n";
+import { useI18n, type TranslationKey } from "./i18n";
+import { hasDesktopBridge, desktop, type MenuAction } from "./lib/desktop";
 import { exportTreeElement, type ExportFormat } from "./lib/exporters";
-import { loadLicenseSnapshot, verifyLicense } from "./lib/license";
-import { openProjectFile, saveProjectFile } from "./lib/projectIO";
+import { openProjectFile, parseProject, saveProjectFile } from "./lib/projectIO";
 import { useFamilyStore } from "./store/familyStore";
 
-const PUBLIC_SHELL_BUILD = import.meta.env.VITE_PUBLIC_SHELL === "true";
+const TOAST_DURATION_MS = 3600;
+
+const EXPORT_SUCCESS: Record<ExportFormat, TranslationKey> = { pdf: "pdfExported", png: "pngExported", svg: "svgExported" };
+const EXPORT_FAILURE: Record<ExportFormat, TranslationKey> = { pdf: "couldNotExportPdf", png: "couldNotExportPng", svg: "couldNotExportSvg" };
 
 function App() {
   const { direction, language, t } = useI18n();
   const activeView = useFamilyStore((state) => state.activeView);
+  const addPerson = useFamilyStore((state) => state.addPerson);
   const createProject = useFamilyStore((state) => state.createProject);
-  const license = useFamilyStore((state) => state.license);
+  const filePath = useFamilyStore((state) => state.filePath);
+  const isDirty = useFamilyStore((state) => state.isDirty);
   const loadProject = useFamilyStore((state) => state.loadProject);
-  const project = useFamilyStore((state) => state.project);
-  const setLicense = useFamilyStore((state) => state.setLicense);
+  const markSaved = useFamilyStore((state) => state.markSaved);
+  const setActiveView = useFamilyStore((state) => state.setActiveView);
   const theme = useFamilyStore((state) => state.theme);
+  const toggleTheme = useFamilyStore((state) => state.toggleTheme);
   const exportRef = useRef<HTMLDivElement>(null);
-  const [licenseLoaded, setLicenseLoaded] = useState(false);
   const [toast, setToast] = useState<string>();
 
   useEffect(() => {
@@ -38,93 +42,138 @@ function App() {
 
   useEffect(() => {
     if (!toast) return undefined;
-    const timer = window.setTimeout(() => setToast(undefined), 3600);
+    const timer = window.setTimeout(() => setToast(undefined), TOAST_DURATION_MS);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  // Keeps the native title bar, the macOS dot and the close guard in sync.
   useEffect(() => {
-    loadLicenseSnapshot()
-      .then(setLicense)
-      .finally(() => setLicenseLoaded(true));
-  }, [setLicense]);
+    if (!hasDesktopBridge()) return;
+    desktop().setDocumentEdited(isDirty, filePath);
+  }, [filePath, isDirty]);
 
-  useEffect(() => {
-    if (!license.serialKey) {
-      return;
-    }
-    const lastVerified = license.lastVerifiedAt ? new Date(license.lastVerifiedAt).getTime() : 0;
-    const oneDay = 24 * 60 * 60 * 1000;
-    if (Date.now() - lastVerified > oneDay) {
-      verifyLicense(license).then(setLicense).catch(() => undefined);
-    }
-  }, [license, setLicense]);
-
-  async function handleOpen() {
+  const handleOpen = useCallback(async () => {
     try {
       const opened = await openProjectFile();
-      if (opened) {
-        loadProject(opened);
+      if (!opened) return;
+      loadProject(opened.project, opened.filePath);
+      setToast(t("projectLoaded"));
+    } catch (error) {
+      setToast(errorMessage(error, t("couldNotOpenProject")));
+    }
+  }, [loadProject, t]);
+
+  /**
+   * `Save` reuses the current path; `Save As` always prompts. The result is
+   * reported back to the main process so the close-confirmation dialog knows
+   * whether it may proceed.
+   */
+  const handleSave = useCallback(
+    async ({ promptForPath = false } = {}) => {
+      const { project, filePath: currentPath } = useFamilyStore.getState();
+      let saved = false;
+      try {
+        const savedPath = await saveProjectFile(project, promptForPath ? undefined : currentPath);
+        if (savedPath) {
+          markSaved(savedPath);
+          setToast(t("projectSaved"));
+          saved = true;
+        }
+      } catch (error) {
+        setToast(errorMessage(error, t("couldNotSaveProject")));
+      }
+      if (hasDesktopBridge()) desktop().reportSaveResult(saved);
+      return saved;
+    },
+    [markSaved, t],
+  );
+
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      // Exporting always captures the tree, so switch to it first and give
+      // React a chance to mount the canvas before reading the ref.
+      setActiveView("tree");
+      setToast(t("preparingExport"));
+      const surface = await waitForElement(exportRef);
+      if (!surface) {
+        setToast(t("treeSurfaceNotReady"));
+        return;
+      }
+      try {
+        const exportedPath = await exportTreeElement(surface, useFamilyStore.getState().project.name, format);
+        setToast(exportedPath ? t(EXPORT_SUCCESS[format]) : undefined);
+      } catch (error) {
+        setToast(errorMessage(error, t(EXPORT_FAILURE[format])));
+      }
+    },
+    [setActiveView, t],
+  );
+
+  // Native menu items and their accelerators drive the same handlers as the
+  // toolbar buttons, so there is a single implementation of each action.
+  useEffect(() => {
+    if (!hasDesktopBridge()) return undefined;
+    const actions: Record<MenuAction, () => void> = {
+      "new-project": createProject,
+      "open-project": () => void handleOpen(),
+      "save-project": () => void handleSave(),
+      "save-project-as": () => void handleSave({ promptForPath: true }),
+      "export-pdf": () => void handleExport("pdf"),
+      "export-png": () => void handleExport("png"),
+      "export-svg": () => void handleExport("svg"),
+      "add-person": () => addPerson(),
+      "view-timeline": () => setActiveView("timeline"),
+      "view-tree": () => setActiveView("tree"),
+      "toggle-theme": toggleTheme,
+    };
+    return desktop().onMenuAction((action) => actions[action]?.());
+  }, [addPerson, createProject, handleExport, handleOpen, handleSave, setActiveView, toggleTheme]);
+
+  // Projects opened by double-clicking a `.ftree` file or passed on the CLI.
+  useEffect(() => {
+    if (!hasDesktopBridge()) return undefined;
+    return desktop().onOpenFile((file) => {
+      try {
+        loadProject(parseProject(file.contents), file.filePath);
         setToast(t("projectLoaded"));
+      } catch (error) {
+        setToast(errorMessage(error, t("couldNotOpenProject")));
       }
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : t("couldNotOpenProject"));
-    }
-  }
-
-  async function handleSave() {
-    try {
-      const savedPath = await saveProjectFile(project);
-      if (savedPath) {
-        setToast(t("projectSaved"));
-      }
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : t("couldNotSaveProject"));
-    }
-  }
-
-  async function handleExport(format: ExportFormat) {
-    if (!exportRef.current) {
-      setToast(t("treeSurfaceNotReady"));
-      return;
-    }
-    try {
-      const exportedPath = await exportTreeElement(exportRef.current, project.name, format);
-      if (exportedPath) {
-        setToast(format === "png" ? t("pngExported") : format === "svg" ? t("svgExported") : t("pdfExported"));
-      }
-    } catch (error) {
-      const fallback = format === "png" ? t("couldNotExportPng") : format === "svg" ? t("couldNotExportSvg") : t("couldNotExportPdf");
-      setToast(error instanceof Error ? error.message : fallback);
-    }
-  }
-
-  const licenseIsActive = license.tier === "full" && license.status === "active";
-
-  if (!licenseLoaded) {
-    return <div className="app-shell loading-shell"><div className="empty-state">{t("loading")}</div></div>;
-  }
-
-  if (!licenseIsActive) {
-    return <><ActivationGate downloadAfterActivation={PUBLIC_SHELL_BUILD} onStatus={setToast} />{toast ? <div className="toast">{toast}</div> : null}</>;
-  }
-
-  if (PUBLIC_SHELL_BUILD) {
-    return <><FullVersionGate onStatus={setToast} />{toast ? <div className="toast">{toast}</div> : null}</>;
-  }
+    });
+  }, [loadProject, t]);
 
   return (
     <div className="app-shell">
-      <Toolbar onExport={(format) => void handleExport(format)} onNew={createProject} onOpen={() => void handleOpen()} onSave={() => void handleSave()} />
+      <Toolbar
+        onExport={(format) => void handleExport(format)}
+        onNew={createProject}
+        onOpen={() => void handleOpen()}
+        onSave={() => void handleSave()}
+        onSaveAs={() => void handleSave({ promptForPath: true })}
+      />
       <div className="workspace-grid">
         <div className="sidebar">
           <ProjectPanel />
         </div>
         {activeView === "tree" ? <TreeCanvas exportRef={exportRef} onStatus={setToast} /> : <TimelineView />}
-        <Inspector />
+        <Inspector onStatus={setToast} />
       </div>
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
   );
+}
+
+/** Waits a few frames for a conditionally rendered element to attach. */
+async function waitForElement(ref: RefObject<HTMLElement | null>, maxFrames = 30): Promise<HTMLElement | null> {
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    if (ref.current) return ref.current;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+  return ref.current;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export default App;
