@@ -1,0 +1,66 @@
+appId: com.hamzaashour.family-tree-studio
+productName: Family Tree Studio
+copyright: Copyright © ${author}
+
+directories:
+  buildResources: build
+  output: release
+
+# Everything the renderer needs is already bundled into `dist` by Vite, so the
+# packaged app ships only the two build outputs - no node_modules tree.
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+
+fileAssociations:
+  - ext: ftree
+    name: Family Tree Project
+    description: Family Tree Studio project
+    role: Editor
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  darkModeSupport: true
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  # Local/CI builds are ad-hoc signed. Set CSC_LINK/CSC_KEY_PASSWORD to sign
+  # with a Developer ID certificate and enable notarization.
+  identity: null
+  hardenedRuntime: false
+
+dmg:
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-windows-${arch}-portable.${ext}
+
+linux:
+  icon: build/icon.png
+  category: Office
+  target:
+    - target: AppImage
+      arch: [x64]
+
+appImage:
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
