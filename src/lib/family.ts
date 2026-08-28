@@ -121,32 +121,132 @@ function searchBlob(person: Person): string {
 
 /**
  * Assigns each person a depth: children always sit one row below their deepest
- * parent, and spouses are pulled onto the shallower partner's row.
+ * parent, and spouses share a row.
+ *
+ * Both rules only ever push people further down, so the two are relaxed
+ * together until nothing moves. Running the spouse pass once at the end is not
+ * enough - levelling a couple shifts a parent, which in turn has to push their
+ * children down again.
  */
 export function generationMap(people: Person[], relationships: Relationship[]): Map<string, number> {
   const generation = new Map(people.map((person) => [person.id, 0]));
   const parentEdges = relationships.filter((relationship) => relationship.type === "parent-child");
+  const spouseEdges = relationships.filter((relationship) => relationship.type === "spouse");
 
-  for (let pass = 0; pass < people.length; pass += 1) {
+  // Each pass moves at least one person down a whole row, so a tree of n people
+  // settles within n passes. The bound also stops a cyclic imported file from
+  // spinning forever.
+  for (let pass = 0; pass <= people.length; pass += 1) {
     let changed = false;
+
     for (const edge of parentEdges) {
-      const parentGeneration = generation.get(edge.from) ?? 0;
-      const current = generation.get(edge.to) ?? 0;
-      if (parentGeneration + 1 > current) {
-        generation.set(edge.to, parentGeneration + 1);
+      const childRow = (generation.get(edge.from) ?? 0) + 1;
+      if (childRow > (generation.get(edge.to) ?? 0)) {
+        generation.set(edge.to, childRow);
         changed = true;
       }
+    }
+
+    // A couple is pulled down to the deeper partner. Pulling up to the
+    // shallower one instead would seat somebody who married into the family on
+    // their own parent-in-law's row and leave their children a row adrift.
+    for (const edge of spouseEdges) {
+      const from = generation.get(edge.from) ?? 0;
+      const to = generation.get(edge.to) ?? 0;
+      if (from === to) continue;
+      const shared = Math.max(from, to);
+      generation.set(edge.from, shared);
+      generation.set(edge.to, shared);
+      changed = true;
+    }
+
+    if (!changed) break;
+  }
+
+  return compactTowardsChildren(people, parentEdges, spouseEdges, generation);
+}
+
+/**
+ * The relaxation above only knows how to push people down from their own
+ * ancestors, so anyone added without ancestry - the mother attached to a
+ * great-grandchild, a spouse who married in - stays stranded on the top row
+ * with one long edge reaching down to their children.
+ *
+ * This pass drops each couple to sit directly above their shallowest child.
+ * Moving a couple *down* can never seat a child on or above a parent, so the
+ * guarantees established above survive untouched.
+ */
+function compactTowardsChildren(
+  people: Person[],
+  parentEdges: Relationship[],
+  spouseEdges: Relationship[],
+  generation: Map<string, number>,
+): Map<string, number> {
+  const childrenByParent = new Map<string, string[]>();
+  for (const edge of parentEdges) {
+    const children = childrenByParent.get(edge.from);
+    if (children) children.push(edge.to);
+    else childrenByParent.set(edge.from, [edge.to]);
+  }
+
+  // Spouses have to travel together, so they are moved a whole couple at a time.
+  const couples = spouseGroups(people, spouseEdges);
+
+  for (let pass = 0; pass <= people.length; pass += 1) {
+    let changed = false;
+    for (const couple of couples) {
+      let lowestChildRow = Number.POSITIVE_INFINITY;
+      for (const id of couple) {
+        for (const childId of childrenByParent.get(id) ?? []) {
+          lowestChildRow = Math.min(lowestChildRow, generation.get(childId) ?? 0);
+        }
+      }
+      // Childless people have nothing to sink towards and stay where they are.
+      if (!Number.isFinite(lowestChildRow)) continue;
+
+      const target = lowestChildRow - 1;
+      if (target <= (generation.get(couple[0]) ?? 0)) continue;
+      for (const id of couple) generation.set(id, target);
+      changed = true;
     }
     if (!changed) break;
   }
 
-  for (const spouse of relationships) {
-    if (spouse.type !== "spouse") continue;
-    const shared = Math.min(generation.get(spouse.from) ?? 0, generation.get(spouse.to) ?? 0);
-    generation.set(spouse.from, shared);
-    generation.set(spouse.to, shared);
-  }
   return generation;
+}
+
+/** Everyone reachable from each other through spouse links, as one row-locked unit. */
+function spouseGroups(people: Person[], spouseEdges: Relationship[]): string[][] {
+  const partners = new Map<string, string[]>();
+  for (const edge of spouseEdges) {
+    addPartner(partners, edge.from, edge.to);
+    addPartner(partners, edge.to, edge.from);
+  }
+
+  const remaining = new Set(people.map((person) => person.id));
+  const groups: string[][] = [];
+  for (const person of people) {
+    if (!remaining.delete(person.id)) continue;
+    const group = [person.id];
+    const queue = [person.id];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) continue;
+      for (const partner of partners.get(current) ?? []) {
+        if (!remaining.delete(partner)) continue;
+        group.push(partner);
+        queue.push(partner);
+      }
+    }
+    groups.push(group);
+  }
+  return groups;
+}
+
+function addPartner(partners: Map<string, string[]>, from: string, to: string): void {
+  const existing = partners.get(from);
+  if (existing) existing.push(to);
+  else partners.set(from, [to]);
 }
 
 export function relatedPeople(directory: PersonDirectory, relationships: Relationship[], personId: string) {

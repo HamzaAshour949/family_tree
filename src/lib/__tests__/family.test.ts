@@ -113,6 +113,78 @@ describe("generationMap", () => {
     ]);
     expect(generations.get("partner")).toBe(generations.get("child"));
   });
+
+  it("seats a partner who married in on their spouse's row, not the row above", () => {
+    const people = [person("root"), person("child"), person("partner", { gender: "female" })];
+    const generations = generationMap(people, [
+      relationship("r1", "parent-child", "root", "child"),
+      relationship("r2", "spouse", "child", "partner"),
+    ]);
+    // The partner has no parents of their own, so levelling the couple used to
+    // drag the child up onto their own parent's row.
+    expect([generations.get("root"), generations.get("child"), generations.get("partner")]).toEqual([0, 1, 1]);
+  });
+
+  it("keeps grandchildren exactly one row below a couple that was levelled", () => {
+    const people = [person("grandparent"), person("parent"), person("marriedIn", { gender: "female" }), person("grandchild")];
+    const generations = generationMap(people, [
+      relationship("r1", "parent-child", "grandparent", "parent"),
+      relationship("r2", "spouse", "parent", "marriedIn"),
+      relationship("r3", "parent-child", "parent", "grandchild"),
+      relationship("r4", "parent-child", "marriedIn", "grandchild"),
+    ]);
+    expect([
+      generations.get("grandparent"),
+      generations.get("parent"),
+      generations.get("marriedIn"),
+      generations.get("grandchild"),
+    ]).toEqual([0, 1, 1, 2]);
+  });
+
+  it("drops a parent who has no ancestry of their own onto the row above their child", () => {
+    // The mother is attached to a great-grandchild, so nothing above her fixes
+    // her row. She belongs beside the father, not stranded on the top row.
+    const people = [person("g0"), person("g1"), person("g2"), person("mother", { gender: "female" })];
+    const generations = generationMap(people, [
+      relationship("r1", "parent-child", "g0", "g1"),
+      relationship("r2", "parent-child", "g1", "g2"),
+      relationship("r3", "parent-child", "mother", "g2"),
+    ]);
+    expect([generations.get("g0"), generations.get("g1"), generations.get("g2")]).toEqual([0, 1, 2]);
+    expect(generations.get("mother")).toBe(1);
+  });
+
+  it("keeps a couple together when only one of them is pulled down to their child", () => {
+    const people = [person("g0"), person("g1"), person("g2"), person("stepMother", { gender: "female" })];
+    const generations = generationMap(people, [
+      relationship("r1", "parent-child", "g0", "g1"),
+      relationship("r2", "parent-child", "g1", "g2"),
+      relationship("r3", "spouse", "g1", "stepMother"),
+      relationship("r4", "parent-child", "stepMother", "g2"),
+    ]);
+    expect(generations.get("stepMother")).toBe(generations.get("g1"));
+    expect(generations.get("g2")).toBe(generations.get("g1")! + 1);
+  });
+
+  it("leaves a childless newcomer where the ancestry rules put them", () => {
+    const people = [person("root"), person("child"), person("loner", { gender: "female" })];
+    const generations = generationMap(people, [relationship("r1", "parent-child", "root", "child")]);
+    expect(generations.get("loner")).toBe(0);
+  });
+
+  it("never seats a child on or above a parent, whatever order the links arrive in", () => {
+    const people = [person("a"), person("b", { gender: "female" }), person("c"), person("d", { gender: "female" })];
+    const relationships = [
+      relationship("r1", "parent-child", "a", "b"),
+      relationship("r2", "spouse", "c", "b"),
+      relationship("r3", "parent-child", "c", "d"),
+    ];
+    const generations = generationMap(people, relationships);
+    for (const link of relationships) {
+      if (link.type !== "parent-child") continue;
+      expect(generations.get(link.to)!).toBeGreaterThan(generations.get(link.from)!);
+    }
+  });
 });
 
 describe("relatedPeople", () => {
