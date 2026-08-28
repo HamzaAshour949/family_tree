@@ -184,18 +184,18 @@ export function createBlankProject(): FamilyTreeProject {
 function initialLanguage(): LanguageCode {
   const stored = readPreference(LANGUAGE_KEY);
   if (stored === "en" || stored === "ar") return stored;
-  return navigator.language.toLowerCase().startsWith("ar") ? "ar" : "en";
+  return navigator.language?.toLowerCase().startsWith("ar") ? "ar" : "en";
 }
 
 function initialTheme(): ThemeMode {
   const stored = readPreference(THEME_KEY);
   if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return globalThis.window?.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
 function readPreference(key: string): string | undefined {
   try {
-    return window.localStorage.getItem(key) ?? undefined;
+    return globalThis.localStorage?.getItem(key) ?? undefined;
   } catch {
     return undefined;
   }
@@ -203,7 +203,7 @@ function readPreference(key: string): string | undefined {
 
 function persistPreference(key: string, value: string): void {
   try {
-    window.localStorage.setItem(key, value);
+    globalThis.localStorage?.setItem(key, value);
   } catch {
     // Storage can be unavailable in hardened renderer contexts; preferences
     // simply fall back to the defaults on the next launch.
