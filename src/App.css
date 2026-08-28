@@ -490,6 +490,21 @@ button {
   color: var(--text);
 }
 
+/*
+ * The `img, svg` reset above is meant for our own icons. React Flow builds its
+ * layers out of bare <svg> elements that it positions absolutely and sizes
+ * itself - one per edge, plus the marker, background and minimap surfaces.
+ * Forcing `display: block` and `max-width: 100%` onto those collapses them to
+ * nothing, and every connecting line disappears while the nodes still render.
+ */
+.react-flow__edges > svg,
+svg.react-flow__marker,
+svg.react-flow__background,
+svg.react-flow__minimap-svg {
+  display: initial;
+  max-width: none;
+}
+
 .react-flow__edge.family-edge .react-flow__edge-path {
   stroke-width: 2.8;
 }
