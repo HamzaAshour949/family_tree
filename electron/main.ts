@@ -104,11 +104,6 @@ async function createMainWindow(): Promise<void> {
     await window.loadFile(join(rendererRoot, "index.html"));
   }
 
-  if (queuedFilePath) {
-    const requested = queuedFilePath;
-    queuedFilePath = undefined;
-    await deliverFile(requested);
-  }
 }
 
 /**
@@ -118,7 +113,7 @@ async function createMainWindow(): Promise<void> {
 function hardenNavigation(window: BrowserWindow): void {
   const isInternal = (target: string) => {
     if (devServerUrl && target.startsWith(devServerUrl)) return true;
-    return target.startsWith(pathToFileURL(rendererRoot).toString());
+    return target.startsWith(`${pathToFileURL(rendererRoot).toString()}/`);
   };
 
   window.webContents.on("will-navigate", (event, target) => {
@@ -149,6 +144,20 @@ function safeProtocol(target: string): string | undefined {
 }
 
 function registerIpcHandlers(): void {
+  // Claimed by the renderer once it has mounted. A file named on the command
+  // line cannot simply be pushed: the window finishes loading before React has
+  // subscribed, so the message would arrive with nobody listening.
+  ipcMain.handle(IPC.takePendingFile, async (): Promise<OpenedProjectFile | null> => {
+    const filePath = queuedFilePath;
+    queuedFilePath = undefined;
+    if (!filePath) return null;
+    try {
+      return { filePath, contents: await readFile(filePath, "utf8") };
+    } catch {
+      return null;
+    }
+  });
+
   ipcMain.handle(IPC.openProject, async (event): Promise<OpenedProjectFile | null> => {
     const window = senderWindow(event);
     if (!window) return null;

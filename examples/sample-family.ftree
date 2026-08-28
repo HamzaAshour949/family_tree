@@ -1,0 +1,199 @@
+{
+  "schema": "family-tree-studio.ftree",
+  "version": 1,
+  "id": "project-sample-nasser",
+  "name": "Nasser Family",
+  "description": "A small sample tree with four generations, used to try the editor out.",
+  "people": [
+    {
+      "id": "p1",
+      "firstName": "Yusuf",
+      "lastName": "Nasser",
+      "gender": "male",
+      "birthDate": "1918-04-11",
+      "deathDate": "1998-02-03",
+      "birthPlace": "Damascus",
+      "deathPlace": "Amman",
+      "occupation": "Carpenter",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p2",
+      "firstName": "Amina",
+      "lastName": "Haddad",
+      "gender": "female",
+      "birthDate": "1924-09-02",
+      "deathDate": "2009-11-14",
+      "birthPlace": "Homs",
+      "deathPlace": "Amman",
+      "occupation": "Weaver",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p3",
+      "firstName": "Omar",
+      "lastName": "Nasser",
+      "gender": "male",
+      "birthDate": "1950-01-20",
+      "deathDate": "",
+      "birthPlace": "Amman",
+      "deathPlace": "",
+      "occupation": "Civil engineer",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p4",
+      "firstName": "Layla",
+      "lastName": "Karam",
+      "gender": "female",
+      "birthDate": "1953-07-08",
+      "deathDate": "",
+      "birthPlace": "Beirut",
+      "deathPlace": "",
+      "occupation": "Physician",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p5",
+      "firstName": "Rana",
+      "lastName": "Nasser",
+      "gender": "female",
+      "birthDate": "1955-03-30",
+      "deathDate": "",
+      "birthPlace": "Amman",
+      "deathPlace": "",
+      "occupation": "Teacher",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p6",
+      "firstName": "Samir",
+      "lastName": "Nasser",
+      "gender": "male",
+      "birthDate": "1979-05-17",
+      "deathDate": "",
+      "birthPlace": "Amman",
+      "deathPlace": "",
+      "occupation": "Architect",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p7",
+      "firstName": "Hana",
+      "lastName": "Nasser",
+      "gender": "female",
+      "birthDate": "1982-12-01",
+      "deathDate": "",
+      "birthPlace": "Amman",
+      "deathPlace": "",
+      "occupation": "Translator",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "p8",
+      "firstName": "Kareem",
+      "lastName": "Nasser",
+      "gender": "male",
+      "birthDate": "2010-08-23",
+      "deathDate": "",
+      "birthPlace": "Dubai",
+      "deathPlace": "",
+      "occupation": "",
+      "photoUrl": "",
+      "notes": "",
+      "tags": []
+    }
+  ],
+  "relationships": [
+    {
+      "id": "r1",
+      "type": "spouse",
+      "from": "p1",
+      "to": "p2",
+      "date": "1948-06-01"
+    },
+    {
+      "id": "r2",
+      "type": "parent-child",
+      "from": "p1",
+      "to": "p3"
+    },
+    {
+      "id": "r3",
+      "type": "parent-child",
+      "from": "p2",
+      "to": "p3"
+    },
+    {
+      "id": "r4",
+      "type": "parent-child",
+      "from": "p1",
+      "to": "p5"
+    },
+    {
+      "id": "r5",
+      "type": "parent-child",
+      "from": "p2",
+      "to": "p5"
+    },
+    {
+      "id": "r6",
+      "type": "spouse",
+      "from": "p3",
+      "to": "p4",
+      "date": "1977-09-12"
+    },
+    {
+      "id": "r7",
+      "type": "parent-child",
+      "from": "p3",
+      "to": "p6"
+    },
+    {
+      "id": "r8",
+      "type": "parent-child",
+      "from": "p4",
+      "to": "p6"
+    },
+    {
+      "id": "r9",
+      "type": "parent-child",
+      "from": "p3",
+      "to": "p7"
+    },
+    {
+      "id": "r10",
+      "type": "parent-child",
+      "from": "p4",
+      "to": "p7"
+    },
+    {
+      "id": "r11",
+      "type": "parent-child",
+      "from": "p6",
+      "to": "p8"
+    }
+  ],
+  "settings": {
+    "compactNodes": false,
+    "showLinkCounts": true,
+    "showPhotos": true,
+    "sortByDates": true
+  },
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}

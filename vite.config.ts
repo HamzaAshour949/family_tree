@@ -25,7 +25,8 @@ function contentSecurityPolicy(): Plugin {
     name: "family-tree-studio:csp",
     apply: "build",
     transformIndexHtml: (html) =>
-      html.replace("<head>", `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}" />`),
+      // Inserted after the charset declaration, which must stay first.
+      html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}" />`),
   };
 }
 

@@ -5,7 +5,7 @@ import { TimelineView } from "./components/TimelineView";
 import { Toolbar } from "./components/Toolbar";
 import { TreeCanvas } from "./components/TreeCanvas";
 import { useI18n, type TranslationKey } from "./i18n";
-import { hasDesktopBridge, desktop, type MenuAction } from "./lib/desktop";
+import { hasDesktopBridge, desktop, type MenuAction, type OpenedProjectFile } from "./lib/desktop";
 import { exportTreeElement, type ExportFormat } from "./lib/exporters";
 import { openProjectFile, parseProject, saveProjectFile } from "./lib/projectIO";
 import { useFamilyStore } from "./store/familyStore";
@@ -153,7 +153,8 @@ function App() {
   // Projects opened by double-clicking a `.ftree` file or passed on the CLI.
   useEffect(() => {
     if (!hasDesktopBridge()) return undefined;
-    return desktop().onOpenFile(async (file) => {
+
+    const accept = async (file: OpenedProjectFile) => {
       if (!(await confirmDiscard())) return;
       try {
         loadProject(parseProject(file.contents), file.filePath);
@@ -161,7 +162,16 @@ function App() {
       } catch (error) {
         setToast(errorMessage(error, t("couldNotOpenProject")));
       }
-    });
+    };
+
+    // A file named at launch is waiting in the main process rather than being
+    // pushed, because this listener does not exist until the app has mounted.
+    void desktop()
+      .takePendingFile()
+      .then((pending) => (pending ? accept(pending) : undefined))
+      .catch(() => undefined);
+
+    return desktop().onOpenFile((file) => void accept(file));
   }, [confirmDiscard, loadProject, t]);
 
   return (

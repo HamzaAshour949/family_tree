@@ -12,6 +12,7 @@ export const IPC = {
   setDocumentEdited: "window:set-document-edited",
   menuAction: "menu:action",
   openedFile: "file:opened",
+  takePendingFile: "file:take-pending",
   saveResult: "window:save-result",
 } as const;
 
@@ -61,6 +62,8 @@ export interface DesktopBridge {
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   exportFile: (request: ExportFileRequest) => Promise<string | null>;
   openProject: () => Promise<OpenedProjectFile | null>;
+  /** Claims a project the shell asked to open before the app was ready. */
+  takePendingFile: () => Promise<OpenedProjectFile | null>;
   saveProject: (request: SaveProjectRequest) => Promise<string | null>;
   setDocumentEdited: (edited: boolean, filePath?: string) => void;
   reportSaveResult: (saved: boolean) => void;
