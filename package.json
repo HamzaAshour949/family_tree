@@ -18,7 +18,8 @@
     "package": "npm run build && electron-builder",
     "package:mac": "npm run build && electron-builder --mac",
     "package:win": "npm run build && electron-builder --win",
-    "package:all": "npm run build && electron-builder --mac --win"
+    "package:all": "npm run build && electron-builder --mac --win",
+    "smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",

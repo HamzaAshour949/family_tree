@@ -1,17 +1,27 @@
 #!/usr/bin/env node
 /**
- * Compiles the Electron main process and preload to CommonJS.
+ * Builds the Electron main process and preload script.
  *
- * The repository is an ES module package, so the emitted files need their own
- * package manifest to be interpreted as CommonJS by Electron's loader.
+ * Each entry is built on its own so that the shared IPC contract is inlined
+ * into both outputs; a sandboxed preload cannot require a sibling chunk. The
+ * repository is an ES module package, so the emitted CommonJS files also need
+ * their own manifest for Electron's loader to read them correctly.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const outDir = "dist-electron";
-const tsc = process.platform === "win32" ? "tsc.cmd" : "tsc";
+const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 
-execFileSync(join("node_modules", ".bin", tsc), ["-p", "tsconfig.electron.json"], { stdio: "inherit" });
+rmSync(outDir, { force: true, recursive: true });
 mkdirSync(outDir, { recursive: true });
+
+for (const entry of ["main", "preload"]) {
+  execFileSync(npx, ["vite", "build", "--config", "vite.electron.config.ts"], {
+    stdio: "inherit",
+    env: { ...process.env, ELECTRON_ENTRY: entry },
+  });
+}
+
 writeFileSync(join(outDir, "package.json"), `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`);

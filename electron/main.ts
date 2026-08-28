@@ -91,6 +91,12 @@ async function createMainWindow(): Promise<void> {
 
   hardenNavigation(window);
 
+  // A preload failure would otherwise be silent, leaving the renderer with no
+  // file access and no indication why.
+  window.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error(`[preload] ${preloadPath} failed to load:`, error);
+  });
+
   if (devServerUrl) {
     await window.loadURL(devServerUrl);
     window.webContents.openDevTools({ mode: "detach" });
