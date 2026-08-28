@@ -33,5 +33,6 @@ release
 *.sln
 *.sw?
 
-# Local scratch, not part of the project
+# Local scratch notes, not part of the project
 prompt.md
+local-sync.md
