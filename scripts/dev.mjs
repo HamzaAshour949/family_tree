@@ -1,56 +1,36 @@
 #!/usr/bin/env node
 /**
- * Development runner: starts Vite, waits for the dev server to answer, then
- * launches Electron against it. Keeps the two processes in lockstep so that
- * quitting either one tears the whole session down.
+ * Development runner: starts the Vite dev server, builds the Electron entries,
+ * then launches Electron against the server. Quitting either one tears the
+ * whole session down.
+ *
+ * Vite runs through its Node API rather than the `vite` binary, because
+ * Node will not spawn `.cmd` shims on Windows without a shell.
  */
 import { spawn } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
+import { createServer } from "vite";
 import electron from "electron";
+import { buildElectron } from "./build-electron.mjs";
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
-const STARTUP_TIMEOUT_MS = 60_000;
-const children = new Set();
+const server = await createServer({ server: { port: 5173, strictPort: true } });
+await server.listen();
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+const devServerUrl = server.resolvedUrls?.local?.[0] ?? "http://localhost:5173";
+server.printUrls();
 
-const vite = run(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "--port", new URL(DEV_SERVER_URL).port, "--strictPort"]);
-vite.on("exit", (code) => shutdown(code ?? 0));
+await buildElectron();
 
-await Promise.all([waitForServer(DEV_SERVER_URL), buildElectron()]);
+const app = spawn(electron, ["."], {
+  stdio: "inherit",
+  env: { ...process.env, VITE_DEV_SERVER_URL: devServerUrl },
+});
 
-const app = run(electron, ["."], { VITE_DEV_SERVER_URL: DEV_SERVER_URL });
-app.on("exit", (code) => shutdown(code ?? 0));
+app.on("exit", (code) => void shutdown(code ?? 0));
+process.on("SIGINT", () => void shutdown(0));
+process.on("SIGTERM", () => void shutdown(0));
 
-function run(command, args, env = {}) {
-  const child = spawn(command, args, { stdio: "inherit", env: { ...process.env, ...env } });
-  children.add(child);
-  child.on("exit", () => children.delete(child));
-  return child;
-}
-
-function buildElectron() {
-  return new Promise((resolve, reject) => {
-    const build = run(process.execPath, ["scripts/build-electron.mjs"]);
-    build.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Electron build failed with code ${code}`))));
-  });
-}
-
-async function waitForServer(url) {
-  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      await fetch(url, { signal: AbortSignal.timeout(1000) });
-      return;
-    } catch {
-      await delay(200);
-    }
-  }
-  throw new Error(`Vite dev server did not start at ${url}`);
-}
-
-function shutdown(code = 0) {
-  for (const child of children) child.kill();
-  process.exit(typeof code === "number" ? code : 0);
+async function shutdown(code) {
+  app.kill();
+  await server.close().catch(() => undefined);
+  process.exit(code);
 }

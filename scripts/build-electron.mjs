@@ -2,26 +2,47 @@
 /**
  * Builds the Electron main process and preload script.
  *
- * Each entry is built on its own so that the shared IPC contract is inlined
- * into both outputs; a sandboxed preload cannot require a sibling chunk. The
- * repository is an ES module package, so the emitted CommonJS files also need
- * their own manifest for Electron's loader to read them correctly.
+ * Each entry is built separately so that the shared IPC contract is inlined
+ * into both outputs - a sandboxed preload cannot require a sibling chunk.
+ *
+ * Vite is driven through its Node API rather than the `vite` binary: on
+ * Windows, Node refuses to spawn `.cmd` shims without a shell.
  */
-import { execFileSync } from "node:child_process";
+import { builtinModules } from "node:module";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { build } from "vite";
 
-const outDir = "dist-electron";
-const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+const OUT_DIR = "dist-electron";
+const EXTERNAL = ["electron", ...builtinModules, ...builtinModules.map((name) => `node:${name}`)];
 
-rmSync(outDir, { force: true, recursive: true });
-mkdirSync(outDir, { recursive: true });
-
-for (const entry of ["main", "preload"]) {
-  execFileSync(npx, ["vite", "build", "--config", "vite.electron.config.ts"], {
-    stdio: "inherit",
-    env: { ...process.env, ELECTRON_ENTRY: entry },
-  });
+export function electronConfig(entry) {
+  return {
+    configFile: false,
+    build: {
+      outDir: OUT_DIR,
+      emptyOutDir: false,
+      target: "node20",
+      minify: false,
+      sourcemap: true,
+      lib: { entry: { [entry]: `electron/${entry}.ts` }, formats: ["cjs"] },
+      rollupOptions: { external: EXTERNAL, output: { entryFileNames: "[name].js" } },
+    },
+  };
 }
 
-writeFileSync(join(outDir, "package.json"), `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`);
+export async function buildElectron() {
+  rmSync(OUT_DIR, { force: true, recursive: true });
+  mkdirSync(OUT_DIR, { recursive: true });
+  for (const entry of ["main", "preload"]) {
+    await build(electronConfig(entry));
+  }
+  // The repository is an ES module package, so the emitted CommonJS files need
+  // their own manifest for Electron's loader to read them correctly.
+  writeFileSync(join(OUT_DIR, "package.json"), `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`);
+}
+
+// Only run when invoked directly, so `dev.mjs` can import and reuse it.
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("build-electron.mjs")) {
+  await buildElectron();
+}
