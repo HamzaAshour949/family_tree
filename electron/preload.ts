@@ -11,7 +11,6 @@ const bridge: DesktopBridge = {
   confirm: (request: ConfirmRequest) => ipcRenderer.invoke(IPC.confirm, request),
   exportFile: (request: ExportFileRequest) => ipcRenderer.invoke(IPC.exportFile, request),
   openProject: () => ipcRenderer.invoke(IPC.openProject),
-  readProject: (filePath: string) => ipcRenderer.invoke(IPC.readProject, filePath),
   saveProject: (request: SaveProjectRequest) => ipcRenderer.invoke(IPC.saveProject, request),
   setDocumentEdited: (edited: boolean, filePath?: string) => ipcRenderer.send(IPC.setDocumentEdited, edited, filePath),
   reportSaveResult: (saved: boolean) => ipcRenderer.send(IPC.saveResult, saved),

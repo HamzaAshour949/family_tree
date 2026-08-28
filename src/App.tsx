@@ -52,7 +52,28 @@ function App() {
     desktop().setDocumentEdited(isDirty, filePath);
   }, [filePath, isDirty]);
 
+  /**
+   * Replacing the open project throws away anything unsaved, so every path
+   * that does so asks first. Reading the flag from the store rather than a
+   * captured value keeps this correct without re-creating the callbacks.
+   */
+  const confirmDiscard = useCallback(async () => {
+    if (!useFamilyStore.getState().isDirty) return true;
+    if (!hasDesktopBridge()) return window.confirm(t("discardChangesMessage"));
+    return desktop().confirm({
+      title: t("discardChangesTitle"),
+      message: t("discardChangesMessage"),
+      confirmLabel: t("discard"),
+      cancelLabel: t("cancel"),
+    });
+  }, [t]);
+
+  const handleNew = useCallback(async () => {
+    if (await confirmDiscard()) createProject();
+  }, [confirmDiscard, createProject]);
+
   const handleOpen = useCallback(async () => {
+    if (!(await confirmDiscard())) return;
     try {
       const opened = await openProjectFile();
       if (!opened) return;
@@ -61,7 +82,7 @@ function App() {
     } catch (error) {
       setToast(errorMessage(error, t("couldNotOpenProject")));
     }
-  }, [loadProject, t]);
+  }, [confirmDiscard, loadProject, t]);
 
   /**
    * `Save` reuses the current path; `Save As` always prompts. The result is
@@ -114,7 +135,7 @@ function App() {
   useEffect(() => {
     if (!hasDesktopBridge()) return undefined;
     const actions: Record<MenuAction, () => void> = {
-      "new-project": createProject,
+      "new-project": () => void handleNew(),
       "open-project": () => void handleOpen(),
       "save-project": () => void handleSave(),
       "save-project-as": () => void handleSave({ promptForPath: true }),
@@ -127,12 +148,13 @@ function App() {
       "toggle-theme": toggleTheme,
     };
     return desktop().onMenuAction((action) => actions[action]?.());
-  }, [addPerson, createProject, handleExport, handleOpen, handleSave, setActiveView, toggleTheme]);
+  }, [addPerson, handleExport, handleNew, handleOpen, handleSave, setActiveView, toggleTheme]);
 
   // Projects opened by double-clicking a `.ftree` file or passed on the CLI.
   useEffect(() => {
     if (!hasDesktopBridge()) return undefined;
-    return desktop().onOpenFile((file) => {
+    return desktop().onOpenFile(async (file) => {
+      if (!(await confirmDiscard())) return;
       try {
         loadProject(parseProject(file.contents), file.filePath);
         setToast(t("projectLoaded"));
@@ -140,13 +162,13 @@ function App() {
         setToast(errorMessage(error, t("couldNotOpenProject")));
       }
     });
-  }, [loadProject, t]);
+  }, [confirmDiscard, loadProject, t]);
 
   return (
     <div className="app-shell">
       <Toolbar
         onExport={(format) => void handleExport(format)}
-        onNew={createProject}
+        onNew={() => void handleNew()}
         onOpen={() => void handleOpen()}
         onSave={() => void handleSave()}
         onSaveAs={() => void handleSave({ promptForPath: true })}

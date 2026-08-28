@@ -8,7 +8,6 @@ export const IPC = {
   confirm: "dialog:confirm",
   exportFile: "file:export",
   openProject: "file:open-project",
-  readProject: "file:read-project",
   saveProject: "file:save-project",
   setDocumentEdited: "window:set-document-edited",
   menuAction: "menu:action",
@@ -62,7 +61,6 @@ export interface DesktopBridge {
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   exportFile: (request: ExportFileRequest) => Promise<string | null>;
   openProject: () => Promise<OpenedProjectFile | null>;
-  readProject: (filePath: string) => Promise<OpenedProjectFile>;
   saveProject: (request: SaveProjectRequest) => Promise<string | null>;
   setDocumentEdited: (edited: boolean, filePath?: string) => void;
   reportSaveResult: (saved: boolean) => void;

@@ -158,11 +158,6 @@ function registerIpcHandlers(): void {
     return { filePath, contents: await readFile(filePath, "utf8") };
   });
 
-  ipcMain.handle(IPC.readProject, async (_event, filePath: unknown): Promise<OpenedProjectFile> => {
-    if (typeof filePath !== "string") throw new Error("A project path is required.");
-    return { filePath, contents: await readFile(filePath, "utf8") };
-  });
-
   ipcMain.handle(IPC.saveProject, async (event, request: SaveProjectRequest): Promise<string | null> => {
     const window = senderWindow(event);
     if (!window) return null;
@@ -226,7 +221,10 @@ function registerIpcHandlers(): void {
 
 function windowTitle(): string {
   const document = documentPath ? basename(documentPath) : undefined;
-  return [document, app.getName()].filter(Boolean).join(" - ");
+  // macOS shows unsaved state through the close button and proxy icon; other
+  // platforms only have the title bar.
+  const marker = documentEdited && process.platform !== "darwin" ? "\u2022 " : "";
+  return `${marker}${[document, app.getName()].filter(Boolean).join(" - ")}`;
 }
 
 function senderWindow(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent): BrowserWindow | null {
