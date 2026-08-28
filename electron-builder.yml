@@ -12,6 +12,8 @@ files:
   - dist/**
   - dist-electron/**
   - package.json
+  # Source maps are kept on disk for local debugging but not shipped.
+  - "!**/*.map"
 
 fileAssociations:
   - ext: ftree
@@ -58,6 +60,7 @@ portable:
 linux:
   icon: build/icon.png
   category: Office
+  syncDesktopName: true
   target:
     - target: AppImage
       arch: [x64]

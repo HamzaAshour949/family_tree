@@ -13,13 +13,16 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createRequire } from "node:module";
 
-const electron = createRequire(import.meta.url)("electron");
+// `SMOKE_APP` points the checks at an already packaged binary; without it the
+// app runs from source through the local Electron install.
+const packagedApp = process.env.SMOKE_APP;
+const electron = packagedApp ?? createRequire(import.meta.url)("electron");
 const DEBUG_PORT = 9222;
 const READY_TIMEOUT_MS = 30_000;
 const checks = [];
 let nextMessageId = 0;
 
-const app = spawn(electron, [`--remote-debugging-port=${DEBUG_PORT}`, ...process.argv.slice(2), "."], { stdio: "inherit" });
+const app = spawn(electron, [`--remote-debugging-port=${DEBUG_PORT}`, ...process.argv.slice(2), ...(packagedApp ? [] : ["."])], { stdio: "inherit" });
 let socket;
 
 try {
