@@ -32,3 +32,6 @@ release
 *.njsproj
 *.sln
 *.sw?
+
+# Local scratch, not part of the project
+prompt.md
