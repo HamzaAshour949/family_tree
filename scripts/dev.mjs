@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "vite";
 import electron from "electron";
-import { buildElectron } from "./build-electron.mjs";
+import { buildShell } from "./build-shell.mjs";
 
 const server = await createServer({ server: { port: 5173, strictPort: true } });
 await server.listen();
@@ -18,7 +18,7 @@ await server.listen();
 const devServerUrl = server.resolvedUrls?.local?.[0] ?? "http://localhost:5173";
 server.printUrls();
 
-await buildElectron();
+await buildShell();
 
 const app = spawn(electron, ["."], {
   stdio: "inherit",

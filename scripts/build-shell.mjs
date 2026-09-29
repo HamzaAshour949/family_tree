@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds the Electron main process and preload script.
+ * Builds the Electron shell: the main process and the preload script.
  *
  * Each entry is built separately so that the shared IPC contract is inlined
  * into both outputs - a sandboxed preload cannot require a sibling chunk.
@@ -25,13 +25,13 @@ export function electronConfig(entry) {
       target: "node20",
       minify: false,
       sourcemap: true,
-      lib: { entry: { [entry]: `electron/${entry}.ts` }, formats: ["cjs"] },
+      lib: { entry: { [entry]: `shell/electron/${entry}.ts` }, formats: ["cjs"] },
       rollupOptions: { external: EXTERNAL, output: { entryFileNames: "[name].js" } },
     },
   };
 }
 
-export async function buildElectron() {
+export async function buildShell() {
   rmSync(OUT_DIR, { force: true, recursive: true });
   mkdirSync(OUT_DIR, { recursive: true });
   for (const entry of ["main", "preload"]) {
@@ -43,6 +43,6 @@ export async function buildElectron() {
 }
 
 // Only run when invoked directly, so `dev.mjs` can import and reuse it.
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("build-electron.mjs")) {
-  await buildElectron();
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("build-shell.mjs")) {
+  await buildShell();
 }
