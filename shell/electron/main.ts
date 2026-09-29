@@ -104,7 +104,7 @@ async function bootstrap(): Promise<void> {
 
   registerIpcHandlers();
   await app.whenReady();
-  denyPermissions();
+  lockDownSession();
   applyMenu();
   await createMainWindow();
 }
@@ -232,10 +232,21 @@ function recoverFromRendererCrash(window: BrowserWindow): void {
   });
 }
 
-/** The app needs no camera, microphone, notifications or location, so nothing is granted. */
-function denyPermissions(): void {
+/**
+ * Keeps the session from doing anything on its own account.
+ *
+ * The app needs no camera, microphone, notifications or location, so nothing is
+ * granted. The spellchecker is switched off for the whole session, not just the
+ * window: left on, Chromium downloads a dictionary from Google on every launch,
+ * a network request the app never asked for.
+ */
+function lockDownSession(): void {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setSpellCheckerEnabled(false);
+  // The dictionary is fetched per configured language, so an empty list is what
+  // actually stops the download.
+  session.defaultSession.setSpellCheckerLanguages([]);
 }
 
 function isTrustedUrl(target: string): boolean {

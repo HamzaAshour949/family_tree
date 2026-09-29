@@ -76,34 +76,34 @@ try {
   expect("Node is not exposed to the page", (await evaluate("[typeof require, typeof process, typeof Buffer].join()")) === "undefined,undefined,undefined");
 
   // A relative path on the command line is resolved and opened by the main process.
-  expect("the launch file is opened", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 8);
-  expect("its relationships are drawn", (await evaluate("document.querySelectorAll('.react-flow__edge').length")) === 11);
-  expect("the project name is shown", (await evaluate("document.querySelector('.brand-project')?.textContent")) === "Nasser Family");
-  expect("an opened project starts clean", !(await evaluate("!!document.querySelector('.dirty-dot')")));
-  expect("the tree is fitted into view", (await evaluate("document.querySelector('.react-flow__viewport')?.style.transform")) !== "translate(0px, 0px) scale(1)");
-  expect("the minimap draws the people", (await evaluate("document.querySelectorAll('.react-flow__minimap-node').length")) === 8);
+  // Everything past the first node depends on React Flow measuring the cards,
+  // which happens asynchronously, so these wait for the end state rather than
+  // sampling it once - a slow machine must not read as a failure.
+  await eventually("the launch file is opened", "document.querySelectorAll('.react-flow__node').length === 8");
+  await eventually("its relationships are drawn", "document.querySelectorAll('.react-flow__edge').length === 11");
+  await eventually("the tree is fitted into view", "!!document.querySelector('.react-flow__viewport') && document.querySelector('.react-flow__viewport').style.transform !== 'translate(0px, 0px) scale(1)'");
+  await eventually("the minimap draws the people", "document.querySelectorAll('.react-flow__minimap-node').length === 8");
+  await eventually("the project name is shown", "document.querySelector('.brand-project')?.textContent === 'Nasser Family'");
+  await eventually("an opened project starts clean", "!document.querySelector('.dirty-dot')");
 
   // A round trip through the editor.
   await evaluate("document.querySelector('.react-flow__node[data-id=\"p3\"] .person-node').click()");
-  await delay(300);
+  await eventually("selecting a person opens their profile", "document.querySelector('.inspector .panel-title')?.textContent === 'Omar Nasser'");
   await evaluate("[...document.querySelectorAll('.quick-add .text-button')].find((button) => button.textContent.includes('Add son')).click()");
-  await delay(600);
-  expect("adding a relative draws a node", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 9);
-  expect("editing marks the document dirty", await evaluate("!!document.querySelector('.dirty-dot')"));
-  expect("the new person's name is ready to type", (await evaluate("document.activeElement?.tagName")) === "INPUT");
+  await eventually("adding a relative draws a node", "document.querySelectorAll('.react-flow__node').length === 9");
+  await eventually("editing marks the document dirty", "!!document.querySelector('.dirty-dot')");
+  await eventually("the new person's name is ready to type", "document.activeElement?.tagName === 'INPUT'");
 
   await evaluate("document.querySelector('[aria-label=\"Undo\"]').click()");
-  await delay(400);
-  expect("undo removes the relative", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 8);
-  expect("undoing back to the opened state reads as clean", !(await evaluate("!!document.querySelector('.dirty-dot')")));
+  await eventually("undo removes the relative", "document.querySelectorAll('.react-flow__node').length === 8");
+  await eventually("undoing back to the opened state reads as clean", "!document.querySelector('.dirty-dot')");
 
   // Right-to-left.
   await evaluate(
     "(() => { const el = document.querySelector('.language-select'); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(el, 'ar'); el.dispatchEvent(new Event('change', { bubbles: true })); })()",
   );
-  await delay(500);
-  expect("switching to Arabic mirrors the layout", (await evaluate("document.documentElement.dir")) === "rtl");
-  expect("the interface is translated", (await evaluate("document.querySelector('.brand-subtitle')?.textContent")) !== null && (await evaluate("document.querySelector('[role=\"tab\"]')?.textContent")) === "الشجرة");
+  await eventually("switching to Arabic mirrors the layout", "document.documentElement.dir === 'rtl'");
+  await eventually("the interface is translated", "document.querySelector('[role=\"tab\"]')?.textContent === 'الشجرة'");
 } catch (error) {
   checks.push({ name: `run completed (${error instanceof Error ? error.message : error})`, ok: false });
 } finally {
@@ -128,6 +128,17 @@ async function shutDown(child) {
 
 function expect(name, ok) {
   checks.push({ name, ok: Boolean(ok) });
+}
+
+/** Records a check that passes as soon as `expression` is truthy, or fails if it never is within the timeout. */
+async function eventually(name, expression, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  let ok = false;
+  while (!ok && Date.now() < deadline) {
+    ok = Boolean(await evaluate(expression));
+    if (!ok) await delay(150);
+  }
+  expect(name, ok);
 }
 
 async function waitFor(predicate, description, timeoutMs = 15_000) {
