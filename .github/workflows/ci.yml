@@ -52,6 +52,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Electron's npm package no longer downloads its binary at install time;
+      # it fetches it the first time it is required. The helper below lives
+      # inside that download, so fetch it now.
+      - name: Download the Electron binary
+        run: node node_modules/electron/install.js
       - name: Enable Chromium's setuid sandbox helper
         run: |
           sudo chown root node_modules/electron/dist/chrome-sandbox
