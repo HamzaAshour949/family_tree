@@ -1,8 +1,15 @@
 import { useMemo } from "react";
 import { CalendarDays } from "lucide-react";
-import { useI18n } from "../i18n";
+import { type TranslationKey, useI18n } from "../i18n";
 import { peopleById, personName, timelineEvents } from "../lib/family";
 import { useFamilyStore } from "../store/familyStore";
+import type { TimelineEvent } from "../types";
+
+const KIND_LABEL: Record<TimelineEvent["kind"], TranslationKey> = {
+  birth: "eventBirth",
+  death: "eventDeath",
+  marriage: "eventMarriage",
+};
 
 export function TimelineView() {
   const { familyText, t } = useI18n();
@@ -26,9 +33,7 @@ export function TimelineView() {
       <div className="timeline-header">
         <div>
           <h2 className="timeline-title">{t("timeline")}</h2>
-          <p className="muted-text">
-            {events.length} {t("datedEventsAcross")} {project.people.length} {t("peopleLower")}
-          </p>
+          <p className="muted-text">{familyText.timelineSummary(events.length, project.people.length)}</p>
         </div>
         <span className="status-chip">
           <CalendarDays size={14} />
@@ -41,13 +46,19 @@ export function TimelineView() {
         {events.map((event) => {
           const person = event.personId ? directory.get(event.personId) : undefined;
           return (
-            <button className="timeline-event list-row interactive" key={event.id} onClick={() => openPerson(event.personId)} type="button">
+            <button
+              className="timeline-event list-row interactive"
+              disabled={!event.personId}
+              key={event.id}
+              onClick={() => openPerson(event.personId)}
+              type="button"
+            >
               <span className="timeline-year">{event.year}</span>
               <span>
                 <strong>{event.title}</strong>
                 <span className="muted-text">{event.detail}</span>
               </span>
-              <span className="status-chip">{person ? personName(person, familyText) : event.kind}</span>
+              <span className="status-chip">{person ? personName(person, familyText) : t(KIND_LABEL[event.kind])}</span>
             </button>
           );
         })}

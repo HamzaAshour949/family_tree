@@ -1,12 +1,20 @@
 import { desktop } from "./desktop";
-import { safeFileName } from "./projectIO";
-import type { ExportFormat } from "../../electron/shared";
+import { safeFileName } from "./projectFile";
+import type { ExportFormat } from "../../shared/desktop";
 
 export type { ExportFormat };
 
 const EXPORT_PADDING = 56;
 const MIN_EXPORT_WIDTH = 900;
 const MIN_EXPORT_HEIGHT = 640;
+/** Preferred sharpness; reduced for trees too large to rasterise at that scale. */
+const PREFERRED_PIXEL_RATIO = 2;
+/** Chromium refuses to create canvases much beyond these, and fails silently with a blank image. */
+const MAX_CANVAS_SIDE = 16_384;
+const MAX_CANVAS_PIXELS = 100_000_000;
+/** PDF viewers cap a page at 200 inches, which is 14,400 points. */
+const MAX_PDF_SIDE_POINTS = 14_400;
+const PX_TO_POINTS = 0.75;
 
 interface PreparedExport {
   host: HTMLDivElement;
@@ -42,9 +50,11 @@ async function renderExport(prepared: PreparedExport, format: ExportFormat): Pro
   if (format === "png") return dataUrlToBytes(pngDataUrl);
 
   const { jsPDF } = await import("jspdf");
-  const { width, height } = prepared;
-  const pdf = new jsPDF({ orientation: width >= height ? "landscape" : "portrait", unit: "px", format: [width, height] });
-  pdf.addImage(pngDataUrl, "PNG", 0, 0, width, height);
+  const page = pdfPageSize(prepared.width, prepared.height);
+  const pdf = new jsPDF({ orientation: page.width >= page.height ? "landscape" : "portrait", unit: "px", format: [page.width, page.height], compress: true });
+  // Without a compression mode jsPDF stores the decoded pixels as they are,
+  // which turned a 0.5 MB picture of a small tree into a 10 MB PDF.
+  pdf.addImage(pngDataUrl, "PNG", 0, 0, page.width, page.height, undefined, "FAST");
   return new Uint8Array(pdf.output("arraybuffer"));
 }
 
@@ -115,12 +125,30 @@ export function parseTranslate(value: string): { x: number; y: number } {
   return match ? { x: Number(match[1]), y: Number(match[2]) } : { x: 0, y: 0 };
 }
 
+/**
+ * Sharpness for a canvas of this size. A large family tree at 2x would exceed
+ * what the browser can allocate and come out blank, so the ratio drops just
+ * enough to stay inside the limits.
+ */
+export function exportPixelRatio(width: number, height: number): number {
+  const bySide = MAX_CANVAS_SIDE / Math.max(width, height);
+  const byArea = Math.sqrt(MAX_CANVAS_PIXELS / (width * height));
+  return Math.max(0.1, Math.min(PREFERRED_PIXEL_RATIO, bySide, byArea));
+}
+
+/** The PDF page in pixels, scaled down proportionally if it would exceed the viewer limit. */
+export function pdfPageSize(width: number, height: number): { width: number; height: number } {
+  const longest = Math.max(width, height) * PX_TO_POINTS;
+  const scale = longest > MAX_PDF_SIDE_POINTS ? MAX_PDF_SIDE_POINTS / longest : 1;
+  return { width: Math.floor(width * scale), height: Math.floor(height * scale) };
+}
+
 function exportOptions(width: number, height: number) {
   return {
     cacheBust: true,
     width,
     height,
-    pixelRatio: 2,
+    pixelRatio: exportPixelRatio(width, height),
     filter: (node: HTMLElement) => !node.classList?.contains("no-export"),
     backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#101214",
   };
@@ -128,7 +156,7 @@ function exportOptions(width: number, height: number) {
 
 export function dataUrlToBytes(dataUrl: string): Uint8Array {
   const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  const binary = window.atob(base64);
+  const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;

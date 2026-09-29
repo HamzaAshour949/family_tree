@@ -10,10 +10,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # Typecheck, unit tests and a production build on every platform we ship for.
+  # The shell's file handling (atomic writes, path rules) is platform specific,
+  # so its tests run natively on each.
   verify:
-    name: Typecheck, test and smoke test
-    runs-on: ubuntu-latest
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +35,38 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      # The window needs a display server, and the CI container runs as a user
-      # without the kernel namespaces Chromium's sandbox requires.
-      - run: xvfb-run -a npm run smoke -- --no-sandbox
+
+  # Boots the real app under a virtual display and drives it. The renderer
+  # runs in Chromium's sandbox, which needs the setuid helper on a stock
+  # runner. Enabling it (rather than passing --no-sandbox) means the test also
+  # proves the app starts and works with the sandbox on.
+  smoke:
+    name: Smoke test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Electron's npm package no longer downloads its binary at install time;
+      # it fetches it the first time it is required. The helper below lives
+      # inside that download, so fetch it now.
+      - name: Download the Electron binary
+        run: node node_modules/electron/install.js
+      - name: Enable Chromium's setuid sandbox helper
+        run: |
+          sudo chown root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      # Several launches, not one: a startup race that fails one launch in a few
+      # is still a bug, and a single lucky run would hide it.
+      - name: Smoke test (5 launches)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "::group::smoke launch $attempt"
+            xvfb-run -a npm run smoke
+            echo "::endgroup::"
+          done

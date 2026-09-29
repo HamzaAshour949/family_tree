@@ -1,7 +1,9 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { BriefcaseBusiness, CalendarDays, UserRound, UsersRound } from "lucide-react";
 import { lifeLabel, personName } from "../lib/family";
+import { HANDLE } from "../lib/handles";
+import { metricsFor } from "../lib/layout";
 import { useI18n } from "../i18n";
 import type { Person } from "../types";
 
@@ -19,24 +21,34 @@ export const PersonNode = memo((props: NodeProps) => {
   const data = props.data as unknown as PersonNodeData;
   const { familyText, t } = useI18n();
   const displayName = personName(data.person, familyText);
-  const initials = useMemo(() => initialsOf(displayName), [displayName]);
+  const initials = initialsOf(displayName);
+  const { nodeWidth } = metricsFor(data.compact);
 
   return (
-    <div className={`person-node-shell ${data.compact ? "compact" : ""}`}>
-      <Handle className="node-handle parent-target" id="parent-target" isConnectable={false} position={Position.Top} type="target" />
-      <Handle className="node-handle child-source" id="child-source" isConnectable={false} position={Position.Bottom} type="source" />
-      <Handle className="node-handle spouse-source" id="spouse-source" isConnectable={false} position={Position.Right} type="source" />
-      <Handle className="node-handle spouse-target" id="spouse-target" isConnectable={false} position={Position.Left} type="target" />
-      <button className={`person-node ${data.compact ? "compact" : ""} ${data.selected ? "selected" : ""} gender-${data.person.gender}`} onClick={() => data.onSelect(data.person.id)} type="button">
+    <div className="person-node-shell" style={{ width: nodeWidth }}>
+      <Handle className="node-handle" id={HANDLE.parentIn} isConnectable={false} position={Position.Top} type="target" />
+      <Handle className="node-handle" id={HANDLE.childOut} isConnectable={false} position={Position.Bottom} type="source" />
+      <Handle className="node-handle spouse-handle spouse-side" id={HANDLE.spouseRight} isConnectable={false} position={Position.Right} type="source" />
+      <Handle className="node-handle spouse-handle spouse-side" id={HANDLE.spouseLeft} isConnectable={false} position={Position.Left} type="target" />
+      <Handle className="node-handle spouse-handle" id={HANDLE.spouseTopOut} isConnectable={false} position={Position.Top} style={{ left: "72%" }} type="source" />
+      <Handle className="node-handle spouse-handle" id={HANDLE.spouseTopIn} isConnectable={false} position={Position.Top} style={{ left: "28%" }} type="target" />
+      <button
+        className={`person-node ${data.compact ? "compact" : ""} ${data.selected ? "selected" : ""} gender-${data.person.gender}`}
+        onClick={() => data.onSelect(data.person.id)}
+        type="button"
+      >
         <div className="person-card-head">
           <div className="person-avatar">
-            <PersonAvatar initials={initials} photoUrl={data.showPhotos ? data.person.photoUrl : undefined} />
+            {/* Keyed on the URL so a corrected link gets a fresh attempt. */}
+            <PersonAvatar initials={initials} key={data.showPhotos ? data.person.photoUrl : ""} photoUrl={data.showPhotos ? data.person.photoUrl : undefined} />
           </div>
-          <span className={`gender-marker ${data.person.gender}`} aria-label={t(data.person.gender)}>{data.person.gender === "female" ? "F" : "M"}</span>
-          <div>
+          <div className="person-identity">
             <h3 className="person-name">{displayName}</h3>
             <p className="person-meta">{lifeLabel(data.person, familyText)}</p>
           </div>
+          <span className={`gender-marker ${data.person.gender}`} aria-label={t(data.person.gender)}>
+            {data.person.gender === "female" ? "F" : "M"}
+          </span>
         </div>
         <div className="node-chip-row">
           {data.person.occupation ? (
@@ -48,7 +60,7 @@ export const PersonNode = memo((props: NodeProps) => {
           {data.showLinkCounts ? (
             <span className="node-chip">
               <UsersRound size={13} />
-              {data.relationshipCount} {t("linksLower")}
+              {familyText.linksCount(data.relationshipCount)}
             </span>
           ) : null}
           {data.person.birthDate ? (
@@ -74,12 +86,7 @@ function PersonAvatar({ initials, photoUrl }: { initials: string; photoUrl?: str
   return <span>{initials || <UserRound size={20} />}</span>;
 }
 
+/** Up to two initials, taken by letter rather than by UTF-16 unit so Arabic and emoji survive. */
 function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  return [...name.split(/\s+/).filter(Boolean).map((part) => [...part][0] ?? "").join("")].slice(0, 2).join("").toUpperCase();
 }

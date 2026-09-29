@@ -4,7 +4,9 @@ import { defineConfig } from "vitest/config";
 
 /**
  * The packaged renderer is loaded from `file://`, so a locked-down policy is
- * injected at build time only. In development Vite's HMR client needs inline
+ * injected at build time only. (`frame-ancestors` is deliberately absent: it is
+ * only honoured as an HTTP header and is ignored - with a console error - in a
+ * `<meta>` tag. The window never embeds or is embedded in a frame anyway.) In development Vite's HMR client needs inline
  * scripts, which the policy below intentionally does not allow.
  */
 const CONTENT_SECURITY_POLICY = [
@@ -17,7 +19,6 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
-  "frame-ancestors 'none'",
 ].join("; ");
 
 function contentSecurityPolicy(): Plugin {
@@ -40,15 +41,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
-    // The layout engine is a single large third-party chunk, loaded on demand.
-    chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
         // Keeps the heavy, rarely-changing libraries out of the app chunk so a
         // code change does not invalidate megabytes of vendor bundle.
         manualChunks: (id) => {
           if (!id.includes("node_modules")) return undefined;
-          if (id.includes("elkjs")) return "vendor-layout";
           if (id.includes("@xyflow")) return "vendor-flow";
           if (id.includes("react")) return "vendor-react";
           return undefined;
@@ -58,7 +56,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "shell/**/*.test.ts"],
     restoreMocks: true,
   },
 });

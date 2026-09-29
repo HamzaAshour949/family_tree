@@ -30,10 +30,11 @@ mac:
       arch: [x64, arm64]
     - target: zip
       arch: [x64, arm64]
-  # Local/CI builds are ad-hoc signed. Set CSC_LINK/CSC_KEY_PASSWORD to sign
-  # with a Developer ID certificate and enable notarization.
-  identity: null
-  hardenedRuntime: false
+  # A Developer ID certificate (CSC_LINK / CSC_KEY_PASSWORD) is picked up
+  # automatically and, with the APPLE_* variables, the app is notarized. With
+  # no certificate the release workflow passes `-c.mac.identity=-` to ad-hoc
+  # sign instead: `identity: null` would skip signing altogether, and an
+  # unsigned, repacked arm64 app is reported by macOS as "damaged".
 
 dmg:
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
