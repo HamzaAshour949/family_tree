@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "../../electron/shared";
+import type { DesktopBridge } from "../../shared/desktop";
 
 declare global {
   interface Window {
@@ -21,4 +21,4 @@ export function hasDesktopBridge(): boolean {
   return Boolean(window.desktop);
 }
 
-export type { DesktopBridge, MenuAction, OpenedProjectFile } from "../../electron/shared";
+export type { DesktopBridge, MenuAction, OpenedProjectFile } from "../../shared/desktop";
