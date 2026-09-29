@@ -46,8 +46,11 @@ let closePromptOpen = false;
 let quitting = false;
 let lastRendererCrash = 0;
 
-// Renderers run in the OS sandbox regardless of how each window is configured.
-app.enableSandbox();
+// The renderer is sandboxed by the window's own `sandbox: true` (and Electron's
+// default). Deliberately no `app.enableSandbox()`: it overrides `--no-sandbox`,
+// which electron-builder's AppImage launcher adds on its own where user
+// namespaces are unavailable - forcing the sandbox there would crash the app
+// at startup instead of letting it run.
 
 const launchFile = projectPathFromArgv(process.argv, process.cwd());
 if (launchFile) {

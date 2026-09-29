@@ -46,15 +46,17 @@ still renders, it has just silently lost every file operation. It checks the
 bridge, the renderer's isolation, opening a project named on the command line
 by a *relative* path, fitting the tree into view, undo, and the Arabic layout.
 
-The renderer runs in Chromium's sandbox, and the app enables it explicitly. On
-Linux that needs either unprivileged user namespaces or the setuid helper:
+The renderer runs in Chromium's sandbox. On Linux that needs either
+unprivileged user namespaces or the setuid helper:
 
 ```sh
 sudo chown root node_modules/electron/dist/chrome-sandbox
 sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 ```
 
-Do not pass `--no-sandbox`; the app will refuse to start with it.
+Where neither is available (a container running as root, for example) pass
+`--no-sandbox` to run without it: `npm run smoke -- --no-sandbox`. The Linux
+AppImage does this on its own on systems without user namespaces.
 
 CI (`.github/workflows/ci.yml`) runs typecheck, tests and a build on Linux,
 Windows and macOS - the shell's file handling is platform specific, so its

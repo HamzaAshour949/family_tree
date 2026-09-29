@@ -11,11 +11,12 @@
  * Requires `npm run build` first, and a display - on a headless machine run it
  * under a virtual one, e.g. `xvfb-run -a npm run smoke`.
  *
- * The renderer runs in Chromium's sandbox. On Linux that needs either
- * unprivileged user namespaces or the setuid helper
+ * The renderer runs in Chromium's sandbox, and this test is more meaningful
+ * with it on. On Linux that needs either unprivileged user namespaces or the
+ * setuid helper
  * (`chown root node_modules/electron/dist/chrome-sandbox && chmod 4755 ...`).
- * Do not work around a missing sandbox with `--no-sandbox`: the app enables
- * the sandbox explicitly, so that flag makes it refuse to start.
+ * Where neither is available - a container running as root, say - pass
+ * `--no-sandbox`: extra arguments are forwarded to Electron.
  */
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
