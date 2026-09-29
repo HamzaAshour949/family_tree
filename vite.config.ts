@@ -40,15 +40,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
-    // The layout engine is a single large third-party chunk, loaded on demand.
-    chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
         // Keeps the heavy, rarely-changing libraries out of the app chunk so a
         // code change does not invalidate megabytes of vendor bundle.
         manualChunks: (id) => {
           if (!id.includes("node_modules")) return undefined;
-          if (id.includes("elkjs")) return "vendor-layout";
           if (id.includes("@xyflow")) return "vendor-flow";
           if (id.includes("react")) return "vendor-react";
           return undefined;
@@ -58,7 +55,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "shell/**/*.test.ts"],
     restoreMocks: true,
   },
 });

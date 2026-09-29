@@ -11,7 +11,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "npm run typecheck && vite build && node scripts/build-electron.mjs",
+    "build": "npm run typecheck && vite build && node scripts/build-shell.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
@@ -30,7 +30,6 @@
     "@xyflow/react": "^12.10.2",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
-    "elkjs": "^0.11.1",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.14.0",

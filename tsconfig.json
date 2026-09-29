@@ -22,5 +22,5 @@
     "noImplicitOverride": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "electron/shared.ts"]
+  "include": ["src", "shared", "shell/core"]
 }
