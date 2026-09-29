@@ -33,9 +33,7 @@ export function TimelineView() {
       <div className="timeline-header">
         <div>
           <h2 className="timeline-title">{t("timeline")}</h2>
-          <p className="muted-text">
-            {events.length} {t("datedEventsAcross")} {project.people.length} {t("peopleLower")}
-          </p>
+          <p className="muted-text">{familyText.timelineSummary(events.length, project.people.length)}</p>
         </div>
         <span className="status-chip">
           <CalendarDays size={14} />

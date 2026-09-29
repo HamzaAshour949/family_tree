@@ -1,15 +1,26 @@
 #!/usr/bin/env node
 /**
- * Launches the packaged renderer inside Electron and drives it over the
- * DevTools protocol to confirm the app actually boots.
+ * Launches the built app inside Electron and drives it over the DevTools
+ * protocol to confirm it boots and the pieces the unit tests cannot reach are
+ * wired together: the preload bridge, the renderer's isolation, the launch-file
+ * path through the main process, and a round trip through the editor.
  *
  * This exists because a broken preload is invisible from the outside: the
  * window still renders, it just silently loses every file operation.
  *
- * Requires `npm run build` first. On a headless machine, run it under a
- * virtual display, e.g. `xvfb-run -a npm run smoke`.
+ * Requires `npm run build` first, and a display - on a headless machine run it
+ * under a virtual one, e.g. `xvfb-run -a npm run smoke`.
+ *
+ * The renderer runs in Chromium's sandbox. On Linux that needs either
+ * unprivileged user namespaces or the setuid helper
+ * (`chown root node_modules/electron/dist/chrome-sandbox && chmod 4755 ...`).
+ * Do not work around a missing sandbox with `--no-sandbox`: the app enables
+ * the sandbox explicitly, so that flag makes it refuse to start.
  */
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createRequire } from "node:module";
 
@@ -17,35 +28,88 @@ import { createRequire } from "node:module";
 // app runs from source through the local Electron install.
 const packagedApp = process.env.SMOKE_APP;
 const electron = packagedApp ?? createRequire(import.meta.url)("electron");
-const DEBUG_PORT = 9222;
+const DEBUG_PORT = Number(process.env.SMOKE_PORT ?? 9222);
 const READY_TIMEOUT_MS = 30_000;
+/** Relative on purpose: it is resolved against this process's working directory by the main process. */
+const LAUNCH_FILE = "examples/sample-family.ftree";
+const BRIDGE_CALLS = [
+  "confirm",
+  "exportFile",
+  "onMenuAction",
+  "onOpenFile",
+  "openProject",
+  "reportSaveResult",
+  "saveProject",
+  "setDocumentState",
+  "setShellStrings",
+  "takePendingFile",
+];
 const checks = [];
 let nextMessageId = 0;
 
-const app = spawn(electron, [`--remote-debugging-port=${DEBUG_PORT}`, ...process.argv.slice(2), ...(packagedApp ? [] : ["."])], { stdio: "inherit" });
+// A private profile keeps this run out of the user's own single-instance lock and settings.
+const profile = mkdtempSync(join(tmpdir(), "fts-smoke-"));
+const app = spawn(
+  electron,
+  [`--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`, ...process.argv.slice(2), ...(packagedApp ? [] : ["."]), LAUNCH_FILE],
+  { stdio: "inherit" },
+);
 let socket;
 
 try {
   const page = await waitForPage();
   socket = await connect(page.webSocketDebuggerUrl);
-  await delay(2000);
+  await waitFor("() => !!document.querySelector('.react-flow__node')", "the project named on the command line to load");
 
   expect("renderer loads the built bundle", page.url.endsWith("dist/index.html"));
   expect("editor shell renders without a gate", await evaluate("!!document.querySelector('.app-shell')"));
-  expect("preload bridge is exposed", (await evaluate("typeof window.desktop")) === "object");
-  expect(
-    "every bridge call is callable",
-    (await evaluate("['openProject','saveProject','exportFile','confirm','onMenuAction','onOpenFile'].every((key) => typeof window.desktop[key] === 'function')")),
-  );
-  expect("app version reaches the renderer", /^\d+\.\d+\.\d+$/.test(String(await evaluate("window.desktop.appVersion"))));
+  expect("a Content-Security-Policy is in force", await evaluate("!!document.querySelector('meta[http-equiv=\"Content-Security-Policy\"]')"));
 
-  await evaluate("document.querySelector('.inspector .primary-button')?.click()");
-  await delay(1500);
-  expect("adding a person renders a node", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 1);
+  // The bridge.
+  expect("preload bridge is exposed", (await evaluate("typeof window.desktop")) === "object");
+  expect("every bridge call is callable", await evaluate(`${JSON.stringify(BRIDGE_CALLS)}.every((key) => typeof window.desktop[key] === 'function')`));
+  expect("app version reaches the renderer", /^\d+\.\d+\.\d+/.test(String(await evaluate("window.desktop.appVersion"))));
+  expect("platform reaches the renderer", ["darwin", "win32", "linux"].includes(await evaluate("window.desktop.platform")));
+
+  // Isolation: the page must not see Node.
+  expect("Node is not exposed to the page", (await evaluate("[typeof require, typeof process, typeof Buffer].join()")) === "undefined,undefined,undefined");
+
+  // A relative path on the command line is resolved and opened by the main process.
+  expect("the launch file is opened", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 8);
+  expect("its relationships are drawn", (await evaluate("document.querySelectorAll('.react-flow__edge').length")) === 11);
+  expect("the project name is shown", (await evaluate("document.querySelector('.brand-project')?.textContent")) === "Nasser Family");
+  expect("an opened project starts clean", !(await evaluate("!!document.querySelector('.dirty-dot')")));
+  expect("the tree is fitted into view", (await evaluate("document.querySelector('.react-flow__viewport')?.style.transform")) !== "translate(0px, 0px) scale(1)");
+  expect("the minimap draws the people", (await evaluate("document.querySelectorAll('.react-flow__minimap-node').length")) === 8);
+
+  // A round trip through the editor.
+  await evaluate("document.querySelector('.react-flow__node[data-id=\"p3\"] .person-node').click()");
+  await delay(300);
+  await evaluate("[...document.querySelectorAll('.quick-add .text-button')].find((button) => button.textContent.includes('Add son')).click()");
+  await delay(600);
+  expect("adding a relative draws a node", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 9);
   expect("editing marks the document dirty", await evaluate("!!document.querySelector('.dirty-dot')"));
+  expect("the new person's name is ready to type", (await evaluate("document.activeElement?.tagName")) === "INPUT");
+
+  await evaluate("document.querySelector('[aria-label=\"Undo\"]').click()");
+  await delay(400);
+  expect("undo removes the relative", (await evaluate("document.querySelectorAll('.react-flow__node').length")) === 8);
+  expect("undoing back to the opened state reads as clean", !(await evaluate("!!document.querySelector('.dirty-dot')")));
+
+  // Right-to-left.
+  await evaluate(
+    "(() => { const el = document.querySelector('.language-select'); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(el, 'ar'); el.dispatchEvent(new Event('change', { bubbles: true })); })()",
+  );
+  await delay(500);
+  expect("switching to Arabic mirrors the layout", (await evaluate("document.documentElement.dir")) === "rtl");
+  expect("the interface is translated", (await evaluate("document.querySelector('.brand-subtitle')?.textContent")) !== null && (await evaluate("document.querySelector('[role=\"tab\"]')?.textContent")) === "الشجرة");
+} catch (error) {
+  checks.push({ name: `run completed (${error instanceof Error ? error.message : error})`, ok: false });
 } finally {
   socket?.close();
-  app.kill();
+  await shutDown(app);
+  // Electron may still be flushing files for a moment after it exits.
+  rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 const failed = checks.filter((check) => !check.ok);
@@ -53,8 +117,25 @@ for (const check of checks) console.log(`${check.ok ? "ok  " : "FAIL"} ${check.n
 console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`);
 process.exit(failed.length === 0 ? 0 : 1);
 
+/** Stops the app and waits for it to be gone, so its profile is no longer being written to. */
+async function shutDown(child) {
+  if (child.exitCode !== null) return;
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill();
+  await Promise.race([exited, delay(10_000)]);
+}
+
 function expect(name, ok) {
   checks.push({ name, ok: Boolean(ok) });
+}
+
+async function waitFor(predicate, description, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await evaluate(`(${predicate})()`)) return;
+    await delay(200);
+  }
+  throw new Error(`timed out waiting for ${description}`);
 }
 
 async function waitForPage() {

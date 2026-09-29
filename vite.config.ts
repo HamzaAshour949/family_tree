@@ -4,7 +4,9 @@ import { defineConfig } from "vitest/config";
 
 /**
  * The packaged renderer is loaded from `file://`, so a locked-down policy is
- * injected at build time only. In development Vite's HMR client needs inline
+ * injected at build time only. (`frame-ancestors` is deliberately absent: it is
+ * only honoured as an HTTP header and is ignored - with a console error - in a
+ * `<meta>` tag. The window never embeds or is embedded in a frame anyway.) In development Vite's HMR client needs inline
  * scripts, which the policy below intentionally does not allow.
  */
 const CONTENT_SECURITY_POLICY = [
@@ -17,7 +19,6 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
-  "frame-ancestors 'none'",
 ].join("; ");
 
 function contentSecurityPolicy(): Plugin {

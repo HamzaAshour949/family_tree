@@ -60,7 +60,7 @@ export const PersonNode = memo((props: NodeProps) => {
           {data.showLinkCounts ? (
             <span className="node-chip">
               <UsersRound size={13} />
-              {data.relationshipCount} {t("linksLower")}
+              {familyText.linksCount(data.relationshipCount)}
             </span>
           ) : null}
           {data.person.birthDate ? (

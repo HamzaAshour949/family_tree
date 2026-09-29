@@ -16,6 +16,9 @@ export interface FamilyTextLabels {
   deathPlaceDetail: (place: string) => string;
   birthRecorded: string;
   marriageRecorded: string;
+  /** "1 link", "3 links": counts need the right plural form in each language. */
+  linksCount: (count: number) => string;
+  timelineSummary: (events: number, people: number) => string;
 }
 
 export interface RelationshipCounts {
@@ -41,6 +44,8 @@ export const defaultFamilyTextLabels: FamilyTextLabels = {
   deathPlaceDetail: (place) => `Place: ${place}`,
   birthRecorded: "Birth recorded",
   marriageRecorded: "Marriage relationship recorded",
+  linksCount: (count) => `${count} ${count === 1 ? "link" : "links"}`,
+  timelineSummary: (events, people) => `${events} dated ${events === 1 ? "event" : "events"} across ${people} ${people === 1 ? "person" : "people"}`,
 };
 
 export function peopleById(people: Person[]): PersonDirectory {

@@ -51,8 +51,10 @@ async function renderExport(prepared: PreparedExport, format: ExportFormat): Pro
 
   const { jsPDF } = await import("jspdf");
   const page = pdfPageSize(prepared.width, prepared.height);
-  const pdf = new jsPDF({ orientation: page.width >= page.height ? "landscape" : "portrait", unit: "px", format: [page.width, page.height] });
-  pdf.addImage(pngDataUrl, "PNG", 0, 0, page.width, page.height);
+  const pdf = new jsPDF({ orientation: page.width >= page.height ? "landscape" : "portrait", unit: "px", format: [page.width, page.height], compress: true });
+  // Without a compression mode jsPDF stores the decoded pixels as they are,
+  // which turned a 0.5 MB picture of a small tree into a 10 MB PDF.
+  pdf.addImage(pngDataUrl, "PNG", 0, 0, page.width, page.height, undefined, "FAST");
   return new Uint8Array(pdf.output("arraybuffer"));
 }
 

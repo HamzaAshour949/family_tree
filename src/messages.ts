@@ -20,9 +20,6 @@ const translations = {
     openProject: "Open .ftree project",
     saveProject: "Save .ftree project",
     saveProjectAs: "Save .ftree project as",
-    exportPng: "Export PNG",
-    exportSvg: "Export SVG",
-    exportPdf: "Export PDF",
     export: "Export",
     exportAsPdf: "as PDF",
     exportAsPng: "as PNG image",
@@ -51,15 +48,12 @@ const translations = {
     discard: "Discard",
     cancel: "Cancel",
     delete: "Delete",
-    remove: "Remove",
     project: "Project",
     addPerson: "Add person",
     name: "Name",
     description: "Description",
     people: "People",
-    peopleLower: "people",
     links: "Links",
-    linksLower: "links",
     events: "Events",
     selectPersonHelp: "Select a person to edit the profile and relationships.",
     firstName: "First name",
@@ -75,7 +69,6 @@ const translations = {
     tags: "Tags",
     notes: "Notes",
     relationships: "Relationships",
-    addParent: "Add parent",
     addFather: "Add father",
     addMother: "Add mother",
     addChild: "Add child",
@@ -112,7 +105,6 @@ const translations = {
     couldNotExportPng: "Could not export PNG.",
     couldNotExportSvg: "Could not export SVG.",
     couldNotExportPdf: "Could not export PDF.",
-    datedEventsAcross: "dated events across",
     noDates: "No dates",
     to: "to",
     addDatesTimeline: "Add birth, death, or spouse dates to build the timeline.",
@@ -145,9 +137,6 @@ const translations = {
     openProject: "فتح ملف .ftree",
     saveProject: "حفظ ملف .ftree",
     saveProjectAs: "حفظ ملف .ftree باسم",
-    exportPng: "تصدير PNG",
-    exportSvg: "تصدير SVG",
-    exportPdf: "تصدير PDF",
     export: "تصدير",
     exportAsPdf: "كملف PDF",
     exportAsPng: "كصورة PNG",
@@ -176,15 +165,12 @@ const translations = {
     discard: "تجاهل",
     cancel: "إلغاء",
     delete: "حذف",
-    remove: "إزالة",
     project: "المشروع",
     addPerson: "إضافة شخص",
     name: "الاسم",
     description: "الوصف",
     people: "الأشخاص",
-    peopleLower: "شخص",
     links: "الروابط",
-    linksLower: "روابط",
     events: "الأحداث",
     selectPersonHelp: "اختر شخصا لتعديل الملف والعلاقات.",
     firstName: "الاسم الأول",
@@ -200,7 +186,6 @@ const translations = {
     tags: "الوسوم",
     notes: "الملاحظات",
     relationships: "العلاقات",
-    addParent: "إضافة والد/والدة",
     addFather: "إضافة أب",
     addMother: "إضافة أم",
     addChild: "إضافة ابن/ابنة",
@@ -237,7 +222,6 @@ const translations = {
     couldNotExportPng: "تعذر تصدير PNG.",
     couldNotExportSvg: "تعذر تصدير SVG.",
     couldNotExportPdf: "تعذر تصدير PDF.",
-    datedEventsAcross: "أحداث مؤرخة ضمن",
     noDates: "لا توجد تواريخ",
     to: "إلى",
     addDatesTimeline: "أضف تواريخ ميلاد أو وفاة أو زواج لبناء الخط الزمني.",
@@ -284,6 +268,8 @@ export const familyTextByLanguage: Record<LanguageCode, FamilyTextLabels> = {
     deathPlaceDetail: (place) => `Place: ${place}`,
     birthRecorded: "Birth recorded",
     marriageRecorded: "Marriage relationship recorded",
+    linksCount: (count) => `${count} ${count === 1 ? "link" : "links"}`,
+    timelineSummary: (events, people) => `${events} dated ${events === 1 ? "event" : "events"} across ${people} ${people === 1 ? "person" : "people"}`,
   },
   ar: {
     unnamedPerson: "شخص بدون اسم",
@@ -300,8 +286,22 @@ export const familyTextByLanguage: Record<LanguageCode, FamilyTextLabels> = {
     deathPlaceDetail: (place) => `المكان: ${place}`,
     birthRecorded: "تم تسجيل الميلاد",
     marriageRecorded: "تم تسجيل علاقة الزواج",
+    linksCount: (count) => arabicCount(count, { none: "بلا روابط", one: "رابط واحد", two: "رابطان", few: "روابط", many: "رابطًا" }),
+    timelineSummary: (events, people) =>
+      `${arabicCount(events, { none: "لا أحداث مؤرخة", one: "حدث مؤرخ واحد", two: "حدثان مؤرخان", few: "أحداث مؤرخة", many: "حدثًا مؤرخًا" })} ضمن ${arabicCount(people, { none: "أي شخص", one: "شخص واحد", two: "شخصين", few: "أشخاص", many: "شخصًا" })}`,
   },
 };
+
+/**
+ * Arabic has separate forms for one, two, 3-10 and 11 or more, and the noun
+ * after the number changes with them, so a bare "N + word" is wrong for most counts.
+ */
+export function arabicCount(count: number, forms: { none: string; one: string; two: string; few: string; many: string }): string {
+  if (count === 0) return forms.none;
+  if (count === 1) return forms.one;
+  if (count === 2) return forms.two;
+  return `${count} ${count <= 10 ? forms.few : forms.many}`;
+}
 
 export function isRtl(language: LanguageCode): boolean {
   return language === "ar";

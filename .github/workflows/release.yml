@@ -5,10 +5,14 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -19,6 +23,9 @@ jobs:
           - os: windows-latest
             name: Windows (x64 + arm64)
             target: --win
+          - os: ubuntu-latest
+            name: Linux (AppImage)
+            target: --linux
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,13 +34,19 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm test
       - run: npm run build
 
-      # Installers are unsigned unless signing material is configured. Set the
-      # CSC_LINK / CSC_KEY_PASSWORD secrets to sign, and add
-      # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID to notarize.
+      # With signing material configured (CSC_LINK / CSC_KEY_PASSWORD, plus
+      # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID to notarize) the
+      # installers are signed. Without it macOS builds are ad-hoc signed, which
+      # is what lets an arm64 app launch at all; Windows builds stay unsigned.
       - name: Package
-        run: npx electron-builder ${{ matrix.target }} --publish never
+        shell: bash
+        run: |
+          extra=""
+          if [ "${{ matrix.os }}" = "macos-latest" ] && [ -z "$CSC_LINK" ]; then extra="-c.mac.identity=-"; fi
+          npx electron-builder ${{ matrix.target }} --publish never $extra
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -51,5 +64,6 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.exe
+            release/*.AppImage
             release/*.blockmap
             release/latest*.yml

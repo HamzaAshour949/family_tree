@@ -786,16 +786,39 @@ button {
   position: relative;
 }
 
+/*
+ * React Flow anchors an edge at the outer edge of its handle. A 10px handle
+ * therefore left every line stopping 10px short of the card, hidden only by
+ * the dot itself. The handle is a point on the card's border instead, and the
+ * visible dot is drawn around it, so exports can drop the dot and keep lines
+ * that meet the cards exactly.
+ */
 .react-flow__handle.node-handle {
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--bg);
-  background: var(--accent);
-  opacity: 0.95;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
   pointer-events: none;
 }
 
-.react-flow__handle.spouse-handle {
+.react-flow__handle.node-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.95;
+  transform: translate(-50%, -50%);
+}
+
+.react-flow__handle.spouse-handle::after {
   background: var(--rose);
 }
 
@@ -846,6 +869,11 @@ button {
 .person-node.selected.gender-male,
 .person-node.selected.gender-female {
   border-color: var(--accent);
+}
+
+/* Connection points are an editing affordance, not part of the picture. */
+.tree-export-surface.is-exporting .react-flow__handle::after {
+  display: none;
 }
 
 .tree-export-surface.is-exporting .person-node:hover {
