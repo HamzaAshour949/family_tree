@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { timelineEvents } from "../family";
-import { parseProject } from "../projectIO";
+import { parseProject } from "../projectFile";
 import { validateRelationship } from "../relationshipRules";
 
 /**

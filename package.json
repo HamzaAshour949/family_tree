@@ -22,7 +22,6 @@
     "package:all": "npm run build && electron-builder --mac --win",
     "smoke": "node scripts/smoke-test.mjs"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^19.1.8",

@@ -4,6 +4,7 @@ import {
   filteredPeople,
   generationMap,
   lifeLabel,
+  normalizeSearchText,
   peopleById,
   personName,
   relatedPeople,
@@ -95,6 +96,26 @@ describe("filteredPeople", () => {
   });
 });
 
+describe("search normalization", () => {
+  it("ignores Latin accents and case", () => {
+    expect(normalizeSearchText("José Álvarez")).toBe("jose alvarez");
+  });
+
+  it("treats Arabic spelling variants as the same word", () => {
+    // hamza forms of alef, tashkeel marks, taa marbuta vs haa, alef maqsura vs yaa
+    expect(normalizeSearchText("أحمد")).toBe(normalizeSearchText("احمد"));
+    expect(normalizeSearchText("مُحَمَّد")).toBe(normalizeSearchText("محمد"));
+    expect(normalizeSearchText("فاطمة")).toBe(normalizeSearchText("فاطمه"));
+    expect(normalizeSearchText("مصطفى")).toBe(normalizeSearchText("مصطفي"));
+  });
+
+  it("finds a person through a variant spelling", () => {
+    const people = [person("a", { firstName: "أحمد", lastName: "الحداد" }), person("b", { firstName: "Omar" })];
+    expect(filteredPeople(people, "احمد", "all").map((match) => match.id)).toEqual(["a"]);
+    expect(filteredPeople(people, "OMAR", "all").map((match) => match.id)).toEqual(["b"]);
+  });
+});
+
 describe("generationMap", () => {
   it("puts a child one row below its deepest parent", () => {
     const people = [person("grandfather"), person("father"), person("child")];
@@ -156,6 +177,15 @@ describe("timelineEvents", () => {
       [1948, "marriage"],
       [1995, "death"],
     ]);
+  });
+
+  it("orders events inside one year by month and day", () => {
+    const tree = project([
+      person("late", { firstName: "Late", lastName: "", birthDate: "1950-11-30" }),
+      person("early", { firstName: "Early", lastName: "", birthDate: "1950-02-01" }),
+      person("yearOnly", { firstName: "Zed", lastName: "", birthDate: "1950" }),
+    ]);
+    expect(timelineEvents(tree).map((event) => event.personId)).toEqual(["yearOnly", "early", "late"]);
   });
 
   it("skips people without dates and marriages without one", () => {

@@ -1,3 +1,4 @@
+import { dateSortKey, parseDateParts, todayParts, yearsBetween } from "./dates";
 import type { FamilyTreeProject, Gender, Person, Relationship, TimelineEvent } from "../types";
 
 export interface FamilyTextLabels {
@@ -52,31 +53,28 @@ export function personName(person: Person, labels: FamilyTextLabels = defaultFam
 }
 
 export function yearFromDate(value?: string): number | undefined {
-  if (!value) return undefined;
-  const year = Number.parseInt(value.slice(0, 4), 10);
-  return Number.isFinite(year) ? year : undefined;
+  return parseDateParts(value)?.year;
 }
 
 export function lifeLabel(person: Person, labels: FamilyTextLabels = defaultFamilyTextLabels): string {
   const born = yearFromDate(person.birthDate);
   const died = yearFromDate(person.deathDate);
-  if (born && died) return `${born}-${died}`;
-  if (born) return labels.bornYear(born);
-  if (died) return labels.diedYear(died);
+  if (born !== undefined && died !== undefined) return `${born}-${died}`;
+  if (born !== undefined) return labels.bornYear(born);
+  if (died !== undefined) return labels.diedYear(died);
   return labels.datesUnknown;
 }
 
-export function ageLabel(person: Person, labels: FamilyTextLabels = defaultFamilyTextLabels): string {
-  const born = person.birthDate ? new Date(person.birthDate) : undefined;
-  if (!born || Number.isNaN(born.getTime())) return labels.ageUnknown;
-  const ended = person.deathDate ? new Date(person.deathDate) : new Date();
-  if (Number.isNaN(ended.getTime())) return labels.ageUnknown;
+/** `today` is injectable so age can be tested without faking the clock. */
+export function ageLabel(person: Person, labels: FamilyTextLabels = defaultFamilyTextLabels, today: Date = new Date()): string {
+  const born = parseDateParts(person.birthDate);
+  if (!born) return labels.ageUnknown;
+  const deceased = Boolean(person.deathDate);
+  const ended = deceased ? parseDateParts(person.deathDate) : todayParts(today);
+  if (!ended) return labels.ageUnknown;
 
-  let age = ended.getFullYear() - born.getFullYear();
-  const beforeBirthday = ended.getMonth() < born.getMonth() || (ended.getMonth() === born.getMonth() && ended.getDate() < born.getDate());
-  if (beforeBirthday) age -= 1;
-  if (age < 0) return labels.ageUnknown;
-  return labels.ageYears(age, Boolean(person.deathDate));
+  const age = yearsBetween(born, ended);
+  return age === undefined ? labels.ageUnknown : labels.ageYears(age, deceased);
 }
 
 /**
@@ -104,7 +102,7 @@ export function totalLinks(counts: RelationshipCounts | undefined): number {
 }
 
 export function filteredPeople(people: Person[], searchQuery: string, genderFilter: Gender | "all"): Person[] {
-  const normalized = searchQuery.trim().toLowerCase();
+  const normalized = normalizeSearchText(searchQuery.trim());
   return people.filter((person) => {
     if (genderFilter !== "all" && person.gender !== genderFilter) return false;
     if (normalized.length === 0) return true;
@@ -113,38 +111,64 @@ export function filteredPeople(people: Person[], searchQuery: string, genderFilt
 }
 
 function searchBlob(person: Person): string {
-  return [personName(person), person.birthPlace, person.deathPlace, person.occupation, person.notes, person.tags.join(" ")]
-    .filter(Boolean)
-    .join(" ")
+  return normalizeSearchText(
+    [personName(person), person.birthPlace, person.deathPlace, person.occupation, person.notes, person.tags.join(" ")].filter(Boolean).join(" "),
+  );
+}
+
+/**
+ * Makes search forgiving in the two scripts the app supports: Latin accents
+ * ("José" matches "jose") and Arabic spelling variants - vowel marks, the
+ * hamza forms of alef, and the interchangeable ending letters.
+ */
+export function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u0640]/g, "")
+    .replace(/[\u0622\u0623\u0625\u0671]/g, "\u0627")
+    .replace(/\u0649/g, "\u064a")
+    .replace(/\u0629/g, "\u0647")
     .toLowerCase();
 }
 
 /**
- * Assigns each person a depth: children always sit one row below their deepest
- * parent, and spouses are pulled onto the shallower partner's row.
+ * Assigns each person a depth: a child always sits below every parent, and
+ * spouses share a row.
+ *
+ * A spouse pair is aligned on the *deeper* partner's row. Aligning on the
+ * shallower one would lift a married-in spouse above their own parents. The two
+ * rules feed each other (moving a spouse down pushes their children down), so
+ * they are applied together until nothing changes.
+ *
+ * Consistent data settles within `people.length` rounds. A hand-edited file
+ * with an ancestry loop never settles, so the rounds and the depth are capped
+ * and the loop simply produces a flat, still-readable layout.
  */
 export function generationMap(people: Person[], relationships: Relationship[]): Map<string, number> {
   const generation = new Map(people.map((person) => [person.id, 0]));
-  const parentEdges = relationships.filter((relationship) => relationship.type === "parent-child");
+  const known = (relationship: Relationship) => generation.has(relationship.from) && generation.has(relationship.to);
+  const parentEdges = relationships.filter((relationship) => relationship.type === "parent-child" && known(relationship));
+  const spouseEdges = relationships.filter((relationship) => relationship.type === "spouse" && known(relationship));
+  const maxDepth = Math.max(0, people.length - 1);
 
-  for (let pass = 0; pass < people.length; pass += 1) {
+  for (let round = 0; round <= people.length; round += 1) {
     let changed = false;
     for (const edge of parentEdges) {
-      const parentGeneration = generation.get(edge.from) ?? 0;
-      const current = generation.get(edge.to) ?? 0;
-      if (parentGeneration + 1 > current) {
-        generation.set(edge.to, parentGeneration + 1);
+      const wanted = Math.min(maxDepth, (generation.get(edge.from) ?? 0) + 1);
+      if (wanted > (generation.get(edge.to) ?? 0)) {
+        generation.set(edge.to, wanted);
+        changed = true;
+      }
+    }
+    for (const edge of spouseEdges) {
+      const shared = Math.max(generation.get(edge.from) ?? 0, generation.get(edge.to) ?? 0);
+      if (generation.get(edge.from) !== shared || generation.get(edge.to) !== shared) {
+        generation.set(edge.from, shared);
+        generation.set(edge.to, shared);
         changed = true;
       }
     }
     if (!changed) break;
-  }
-
-  for (const spouse of relationships) {
-    if (spouse.type !== "spouse") continue;
-    const shared = Math.min(generation.get(spouse.from) ?? 0, generation.get(spouse.to) ?? 0);
-    generation.set(spouse.from, shared);
-    generation.set(spouse.to, shared);
   }
   return generation;
 }
@@ -224,5 +248,10 @@ export function timelineEvents(project: FamilyTreeProject, labels: FamilyTextLab
     });
   }
 
-  return events.sort((first, second) => first.year - second.year || first.title.localeCompare(second.title));
+  return events.sort((first, second) => eventSortKey(first) - eventSortKey(second) || first.title.localeCompare(second.title));
+}
+
+function eventSortKey(event: TimelineEvent): number {
+  const parts = parseDateParts(event.date);
+  return parts ? dateSortKey(parts) : event.year * 10_000;
 }

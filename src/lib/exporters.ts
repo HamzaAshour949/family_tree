@@ -1,5 +1,5 @@
 import { desktop } from "./desktop";
-import { safeFileName } from "./projectIO";
+import { safeFileName } from "./projectFile";
 import type { ExportFormat } from "../../electron/shared";
 
 export type { ExportFormat };

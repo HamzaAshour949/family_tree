@@ -7,7 +7,8 @@ import { TreeCanvas } from "./components/TreeCanvas";
 import { useI18n, type TranslationKey } from "./i18n";
 import { hasDesktopBridge, desktop, type MenuAction, type OpenedProjectFile } from "./lib/desktop";
 import { exportTreeElement, type ExportFormat } from "./lib/exporters";
-import { openProjectFile, parseProject, saveProjectFile } from "./lib/projectIO";
+import { openProjectFile, saveProjectFile } from "./lib/projectIO";
+import { parseProject } from "./lib/projectFile";
 import { useFamilyStore } from "./store/familyStore";
 
 const TOAST_DURATION_MS = 3600;

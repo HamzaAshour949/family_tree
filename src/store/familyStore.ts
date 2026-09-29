@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { normalizeSettings } from "../lib/projectIO";
+import { normalizeSettings } from "../lib/projectFile";
 import { validateRelationship, type RelationshipValidationResult } from "../lib/relationshipRules";
 import { FTREE_SCHEMA, type ActiveView, type FamilyTreeProject, type Gender, type LanguageCode, type Person, type Relationship, type ThemeMode } from "../types";
 

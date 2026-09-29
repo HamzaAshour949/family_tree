@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSettings, parseProject, safeFileName, serializeProject } from "../projectIO";
+import { normalizeSettings, parseProject, safeFileName, serializeProject } from "../projectFile";
 import { person, project, relationship } from "./helpers";
 
 const valid = project(
@@ -20,7 +20,9 @@ describe("parseProject", () => {
     expect(() => parseProject("{ not json")).toThrow(/not valid JSON/);
     expect(() => parseProject("null")).toThrow(/not a valid Family Tree Studio/);
     expect(() => parseProject(JSON.stringify({ schema: "something-else", version: 1, people: [] }))).toThrow(/not a valid/);
-    expect(() => parseProject(JSON.stringify({ ...valid, version: 99 }))).toThrow(/not a valid/);
+    expect(() => parseProject(JSON.stringify({ ...valid, version: 0 }))).toThrow(/not a valid/);
+    expect(() => parseProject(JSON.stringify({ ...valid, version: "1" }))).toThrow(/not a valid/);
+    expect(() => parseProject(JSON.stringify({ ...valid, version: 99 }))).toThrow(/newer version/);
     expect(() => parseProject(JSON.stringify({ ...valid, people: "nope" }))).toThrow(/not a valid/);
   });
 
