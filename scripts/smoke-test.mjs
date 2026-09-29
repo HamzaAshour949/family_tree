@@ -80,7 +80,11 @@ try {
   // which happens asynchronously, so these wait for the end state rather than
   // sampling it once - a slow machine must not read as a failure.
   await eventually("the launch file is opened", "document.querySelectorAll('.react-flow__node').length === 8");
-  await eventually("its relationships are drawn", "document.querySelectorAll('.react-flow__edge').length === 11");
+  await eventually(
+    "its relationships are drawn",
+    "document.querySelectorAll('.react-flow__edge').length === 11",
+    "[...document.querySelectorAll('.react-flow__edge')].map((edge) => edge.dataset.id).join(',')",
+  );
   await eventually("the tree is fitted into view", "!!document.querySelector('.react-flow__viewport') && document.querySelector('.react-flow__viewport').style.transform !== 'translate(0px, 0px) scale(1)'");
   await eventually("the minimap draws the people", "document.querySelectorAll('.react-flow__minimap-node').length === 8");
   await eventually("the project name is shown", "document.querySelector('.brand-project')?.textContent === 'Nasser Family'");
@@ -116,6 +120,7 @@ try {
 const failed = checks.filter((check) => !check.ok);
 for (const check of checks) console.log(`${check.ok ? "ok  " : "FAIL"} ${check.name}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`);
+if (failed.length > 0 && pageLog.length > 0) console.log(`\npage warnings and errors:\n${[...new Set(pageLog)].slice(0, 15).join("\n")}`);
 process.exit(failed.length === 0 ? 0 : 1);
 
 /** Stops the app and waits for it to be gone, so its profile is no longer being written to. */
@@ -130,15 +135,20 @@ function expect(name, ok) {
   checks.push({ name, ok: Boolean(ok) });
 }
 
-/** Records a check that passes as soon as `expression` is truthy, or fails if it never is within the timeout. */
-async function eventually(name, expression, timeoutMs = 15_000) {
+/**
+ * Records a check that passes as soon as `expression` is truthy, or fails if it
+ * never is within the timeout. `observe` is an optional expression whose value
+ * is reported on failure, so a red check says what was actually there.
+ */
+async function eventually(name, expression, observe, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   let ok = false;
   while (!ok && Date.now() < deadline) {
     ok = Boolean(await evaluate(expression));
     if (!ok) await delay(150);
   }
-  expect(name, ok);
+  const detail = ok || !observe ? "" : ` [observed: ${JSON.stringify(await evaluate(observe))}]`;
+  expect(`${name}${detail}`, ok);
 }
 
 async function waitFor(predicate, description, timeoutMs = 15_000) {
@@ -165,10 +175,22 @@ async function waitForPage() {
   throw new Error("Electron did not expose a page target in time.");
 }
 
+/** Warnings and errors the page logged, shown when a check fails: React Flow reports why it cannot draw an edge there. */
+const pageLog = [];
+
 function connect(url) {
   const ws = new WebSocket(url);
   return new Promise((resolve, reject) => {
-    ws.onopen = () => resolve(ws);
+    ws.onopen = () => {
+      ws.addEventListener("message", (event) => {
+        const message = JSON.parse(event.data);
+        if (message.method !== "Runtime.consoleAPICalled" || !["error", "warning"].includes(message.params?.type)) return;
+        const text = (message.params.args ?? []).map((arg) => arg.value ?? arg.description ?? "").join(" ");
+        pageLog.push(`[${message.params.type}] ${text}`.slice(0, 300));
+      });
+      ws.send(JSON.stringify({ id: 9_000_000, method: "Runtime.enable" }));
+      resolve(ws);
+    };
     ws.onerror = () => reject(new Error("Could not attach to the renderer."));
   });
 }
