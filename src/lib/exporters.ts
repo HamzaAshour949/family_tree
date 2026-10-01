@@ -15,6 +15,7 @@ const MAX_CANVAS_PIXELS = 100_000_000;
 /** PDF viewers cap a page at 200 inches, which is 14,400 points. */
 const MAX_PDF_SIDE_POINTS = 14_400;
 const PX_TO_POINTS = 0.75;
+const FRAME_FALLBACK_MS = 100;
 
 interface PreparedExport {
   host: HTMLDivElement;
@@ -44,7 +45,7 @@ export async function exportTreeElement(element: HTMLElement, projectName: strin
 async function renderExport(prepared: PreparedExport, format: ExportFormat): Promise<string | Uint8Array> {
   const { toPng, toSvg } = await import("html-to-image");
   const options = exportOptions(prepared.width, prepared.height);
-  if (format === "svg") return decodeSvgDataUrl(await toSvg(prepared.surface, options));
+  if (format === "svg") return pruneSvgStyles(decodeSvgDataUrl(await toSvg(prepared.surface, options)));
 
   const pngDataUrl = await toPng(prepared.surface, options);
   if (format === "png") return dataUrlToBytes(pngDataUrl);
@@ -149,7 +150,10 @@ function exportOptions(width: number, height: number) {
     width,
     height,
     pixelRatio: exportPixelRatio(width, height),
-    filter: (node: HTMLElement) => !node.classList?.contains("no-export"),
+    // Handles are invisible points in an export (their dots are hidden), but
+    // each carried a copy of every CSS property for its ::after dot - 600 KB
+    // of an 8-person SVG.
+    filter: (node: HTMLElement) => !node.classList?.contains("no-export") && !node.classList?.contains("react-flow__handle"),
     backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#101214",
   };
 }
@@ -162,10 +166,282 @@ export function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
+/** What the browser told us about how each CSS property behaves. */
+export interface PropertyTraits {
+  /** Properties a child takes from its parent when it does not set them. */
+  inherited: ReadonlySet<string>;
+  /** Properties that fall back to their default instead. */
+  notInherited: ReadonlySet<string>;
+  /** Properties whose default follows the element's own `color` (`currentcolor`). */
+  followsColor: ReadonlySet<string>;
+}
+
+const NO_TRAITS: PropertyTraits = { inherited: new Set(), notInherited: new Set(), followsColor: new Set() };
+
+/**
+ * Properties the browser reports as measured lengths rather than as written:
+ * `width: auto` reads back as "236px", `transform-origin: 50% 50%` as the
+ * pixels of the element's own centre. Matching a default there means nothing,
+ * so they are always kept.
+ */
+const LAYOUT_RESOLVED = /^(width|height|inline-size|block-size|top|right|bottom|left|inset-.+|margin-.+|padding-.+|transform-origin|perspective-origin)$/;
+/**
+ * Offsets, margins and paddings are reported as written when they are these
+ * values, so they can be compared like anything else. Sizes never can: a
+ * measured "0px" width is not the default "auto".
+ */
+const LAYOUT_LITERALS = new Set(["auto", "0px"]);
+const SIZE = /^(width|height|inline-size|block-size|transform-origin|perspective-origin)$/;
+
+/**
+ * html-to-image writes every computed CSS property onto every element of an
+ * SVG export - about 7 KB each, over 2 MB for the eight-person sample. Most of
+ * it restates what the element would get anyway, and a declaration can go when
+ * removing it leaves the element with the same value:
+ *
+ * - an inherited property that matches the parent's value;
+ * - any other property that matches its default - including a colour that
+ *   only repeats the element's own `color`, as borders and outlines do;
+ * - for a property the browser did not classify, only a value that matches
+ *   both, which is right whichever way it behaves.
+ *
+ * Custom properties are kept where they are first set and dropped below,
+ * since the exported file has no stylesheet to define them.
+ *
+ * Three kinds are never removed: values measured from layout (see
+ * `LAYOUT_RESOLVED`); properties the browser's own stylesheet sets for this
+ * kind of element (`defaults` differs from `base`, the defaults of a plain
+ * element) - a paragraph's margins are relative to the font in force and
+ * would come back different; and inherited properties this kind of element
+ * does not take from its parent (`overridden`) - a button's text colour comes
+ * from the system's button colour, which is white in a dark theme.
+ *
+ * `parent` is undefined for the outermost element, which inherits the defaults.
+ */
+export function prunedDeclarations(
+  own: ReadonlyMap<string, string>,
+  parent: ReadonlyMap<string, string> | undefined,
+  defaults: ReadonlyMap<string, string>,
+  traits: PropertyTraits = NO_TRAITS,
+  base: ReadonlyMap<string, string> = defaults,
+  overridden: ReadonlySet<string> = new Set(),
+): Map<string, string> {
+  const isDefault = (name: string, value: string) =>
+    defaults.get(name) === value ||
+    (value === "initial" && traits.notInherited.has(name)) ||
+    (traits.followsColor.has(name) && name !== "color" && value === own.get("color"));
+  const measured = (name: string, value: string) => LAYOUT_RESOLVED.test(name) && (SIZE.test(name) || !LAYOUT_LITERALS.has(value));
+  const isInherited = (name: string, value: string) => (parent ? parent.get(name) === value : isDefault(name, value));
+
+  const kept = new Map<string, string>();
+  for (const [name, value] of own) {
+    // Custom properties always inherit and have no default outside the app's
+    // stylesheet: kept where they are set, dropped where they would be inherited.
+    if (name.startsWith("--")) {
+      if (parent?.get(name) !== value) kept.set(name, value);
+      continue;
+    }
+    const fixed = measured(name, value) || defaults.get(name) !== base.get(name) || overridden.has(name);
+    const redundant =
+      !fixed &&
+      (traits.inherited.has(name)
+        ? isInherited(name, value)
+        : traits.notInherited.has(name)
+          ? isDefault(name, value)
+          : isDefault(name, value) && isInherited(name, value));
+    if (!redundant) kept.set(name, value);
+  }
+  return kept;
+}
+
+/** Applies `prunedDeclarations` to every styled element of an exported SVG. */
+function pruneSvgStyles(svg: string): string {
+  const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (parsed.querySelector("parsererror")) return svg;
+
+  const probe = new StyleProbe();
+  const scratch = document.createElement("div");
+  const read = (element: Element) => {
+    const declarations = new Map<string, string>();
+    // The browser's own parser, so values holding ";" (data URLs, quoted fonts) survive intact.
+    scratch.setAttribute("style", element.getAttribute("style") ?? "");
+    for (let index = 0; index < scratch.style.length; index += 1) {
+      const name = scratch.style.item(index);
+      const priority = scratch.style.getPropertyPriority(name);
+      declarations.set(name, `${scratch.style.getPropertyValue(name)}${priority ? ` !${priority}` : ""}`);
+    }
+    return declarations;
+  };
+
+  try {
+    const styled = [...parsed.querySelectorAll("[style]")];
+    const declared = new Map(styled.map((element) => [element, read(element)]));
+    const traits = probe.traits(declared.values(), styled);
+    for (const element of styled) {
+      const parent = element.parentElement?.closest("[style]") ?? undefined;
+      const kept = prunedDeclarations(
+        declared.get(element) ?? new Map(),
+        parent ? declared.get(parent) : undefined,
+        probe.defaultsOf(element),
+        traits,
+        probe.baseFor(element),
+        traits.overriddenFor(element),
+      );
+      const text = [...kept].map(([name, value]) => `${name}: ${value}`).join("; ");
+      if (text) element.setAttribute("style", text);
+      else element.removeAttribute("style");
+    }
+  } finally {
+    probe.dispose();
+  }
+  return new XMLSerializer().serializeToString(parsed);
+}
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+/**
+ * Asks the browser how CSS behaves with no author styles involved: elements
+ * are measured inside a shadow root under a host reset with `all: initial`,
+ * so none of the app's own CSS leaks into the answers. (`all` does not reset
+ * custom properties, which is why `prunedDeclarations` never consults the
+ * probe about them.)
+ */
+class StyleProbe {
+  private readonly host = document.createElement("div");
+  private readonly root: ShadowRoot;
+  private readonly svgRoot = document.createElementNS(SVG_NAMESPACE, "svg");
+  private readonly cache = new Map<string, Map<string, string>>();
+
+  constructor() {
+    this.host.style.cssText = "all: initial; position: fixed; left: -100000px; top: 0;";
+    this.root = this.host.attachShadow({ mode: "open" });
+    this.root.append(this.svgRoot);
+    document.body.append(this.host);
+  }
+
+  /** The computed style an element of this kind gets from the browser alone. */
+  defaultsOf(element: Element): Map<string, string> {
+    const namespace = element.namespaceURI ?? HTML_NAMESPACE;
+    const key = `${namespace} ${element.localName}`;
+    let styles = this.cache.get(key);
+    if (!styles) {
+      const probe = document.createElementNS(namespace, element.localName);
+      // SVG shapes only get their real defaults inside an <svg>.
+      (namespace === SVG_NAMESPACE && element.localName !== "svg" ? this.svgRoot : this.root).append(probe);
+      styles = computedMap(probe);
+      probe.remove();
+      this.cache.set(key, styles);
+    }
+    return styles;
+  }
+
+  /** Defaults of a plain element in the same namespace, which no browser stylesheet rule targets. */
+  baseFor(element: Element): Map<string, string> {
+    const namespace = element.namespaceURI ?? HTML_NAMESPACE;
+    return this.defaultsOf(document.createElementNS(namespace, namespace === SVG_NAMESPACE ? "g" : "div"));
+  }
+
+  /**
+   * Classifies every property used in the export. Each is set to one of the
+   * export's own values on a parent: if the value takes and a plain child picks
+   * it up, the property is inherited; if it takes and the child does not, it is
+   * not. A value that does not take leaves the property unclassified. For an
+   * inherited property, every kind of element in the export is checked too: one
+   * that does not pick the value up has it overridden by the browser's own
+   * stylesheet. Separately, a property whose default changes with `color`
+   * follows it.
+   */
+  traits(declarations: Iterable<ReadonlyMap<string, string>>, elements: Element[]): PropertyTraits & { overriddenFor: (element: Element) => ReadonlySet<string> } {
+    const parent = document.createElement("div");
+    const child = document.createElement("div");
+    const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+    parent.append(child, svg);
+    this.root.append(parent);
+
+    const kinds = new Map<string, Element>();
+    for (const element of elements) {
+      const namespace = element.namespaceURI ?? HTML_NAMESPACE;
+      const key = `${namespace} ${element.localName}`;
+      if (kinds.has(key)) continue;
+      const probe = document.createElementNS(namespace, element.localName);
+      (namespace === SVG_NAMESPACE && element.localName !== "svg" ? svg : parent).append(probe);
+      kinds.set(key, probe);
+    }
+
+    const plainParent = computedMap(parent);
+    const plain = computedMap(child);
+    parent.style.color = "rgb(1, 2, 3)";
+    const coloured = computedMap(child);
+    parent.style.removeProperty("color");
+    const followsColor = new Set([...coloured].filter(([name, value]) => plain.get(name) !== value).map(([name]) => name));
+
+    const candidates = new Map<string, string>();
+    for (const declared of declarations) {
+      for (const [name, value] of declared) {
+        if (!name.startsWith("--") && !candidates.has(name) && value !== plainParent.get(name)) candidates.set(name, value.replace(/ !important$/, ""));
+      }
+    }
+
+    const inherited = new Set<string>();
+    const notInherited = new Set<string>();
+    const overridden = new Map<string, Set<string>>([...kinds.keys()].map((key) => [key, new Set<string>()]));
+    for (const [name, value] of candidates) {
+      parent.style.setProperty(name, value);
+      const set = getComputedStyle(parent).getPropertyValue(name);
+      if (set !== plainParent.get(name)) {
+        if (getComputedStyle(child).getPropertyValue(name) === set) {
+          inherited.add(name);
+          for (const [key, probe] of kinds) {
+            if (getComputedStyle(probe).getPropertyValue(name) !== set) overridden.get(key)?.add(name);
+          }
+        } else {
+          notInherited.add(name);
+        }
+      }
+      parent.style.removeProperty(name);
+    }
+    parent.remove();
+
+    const none = new Set<string>();
+    return {
+      inherited,
+      notInherited,
+      followsColor,
+      overriddenFor: (element) => overridden.get(`${element.namespaceURI ?? HTML_NAMESPACE} ${element.localName}`) ?? none,
+    };
+  }
+
+  dispose(): void {
+    this.host.remove();
+  }
+}
+
+function computedMap(element: Element): Map<string, string> {
+  const computed = getComputedStyle(element);
+  const styles = new Map<string, string>();
+  for (let index = 0; index < computed.length; index += 1) {
+    const name = computed.item(index);
+    styles.set(name, computed.getPropertyValue(name));
+  }
+  return styles;
+}
+
 function decodeSvgDataUrl(dataUrl: string): string {
   return decodeURIComponent(dataUrl.slice(dataUrl.indexOf(",") + 1));
 }
 
+/**
+ * The next frame, or a moment later if no frame comes: Chromium stops drawing
+ * frames for a window that is hidden or covered, and an export started just
+ * before switching away would otherwise wait until the window came back.
+ */
 function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, FRAME_FALLBACK_MS);
+    requestAnimationFrame(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
