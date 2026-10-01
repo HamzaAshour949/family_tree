@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
-import { Background, Controls, MiniMap, Panel, Position, ReactFlow, useNodesInitialized, useReactFlow, type Node, type NodeChange, type NodeTypes } from "@xyflow/react";
+import { Background, Controls, MiniMap, Panel, Position, ReactFlow, useNodesInitialized, useReactFlow, type EdgeTypes, type Node, type NodeChange, type NodeTypes } from "@xyflow/react";
 import { FolderOpen, Heart, MousePointer2, Plus, Sparkles, SlidersHorizontal, UserPlus } from "lucide-react";
 import { type TranslationKey, useI18n } from "../i18n";
 import { buildEdges } from "../lib/edges";
 import { filteredPeople, relationshipCountsById, totalLinks } from "../lib/family";
 import { flowExtentFromNodes, layoutFamilyTreeCached, metricsFor, type LayoutPoint, type NodeMetrics } from "../lib/layout";
 import { useFamilyStore, type RelativeKind } from "../store/familyStore";
+import { FamilyEdge } from "./FamilyEdge";
 import { PersonNode, type PersonNodeData } from "./PersonNode";
 
 interface TreeCanvasProps {
@@ -18,6 +19,7 @@ interface TreeCanvasProps {
 type ContextMenuState = { x: number; y: number; nodeId?: string };
 
 const nodeTypes: NodeTypes = { person: PersonNode };
+const edgeTypes: EdgeTypes = { family: FamilyEdge };
 const ORIGIN: LayoutPoint = { x: 0, y: 0 };
 
 type Measured = { width: number; height: number };
@@ -151,7 +153,10 @@ export function TreeCanvas({ exportRef, onOpen, onOpenSample, onStatus }: TreeCa
     return built;
   }, [linkCounts, measured, positions, selectPerson, selectedPersonId, settings, visiblePeople]);
 
-  const edges = useMemo(() => buildEdges(relationships, visiblePersonIds, positions, metrics), [metrics, positions, relationships, visiblePersonIds]);
+  const edges = useMemo(
+    () => buildEdges(relationships, visiblePersonIds, positions, metrics, measured),
+    [measured, metrics, positions, relationships, visiblePersonIds],
+  );
   const translateExtent = useMemo(() => flowExtentFromNodes(nodes, metrics), [metrics, nodes]);
   const contextPerson = contextMenu?.nodeId ? people.find((person) => person.id === contextMenu.nodeId) : undefined;
   const isEmpty = people.length === 0;
@@ -195,6 +200,7 @@ export function TreeCanvas({ exportRef, onOpen, onOpenSample, onStatus }: TreeCa
           colorMode={theme}
           deleteKeyCode={null}
           edges={edges}
+          edgeTypes={edgeTypes}
           edgesFocusable={false}
           maxZoom={1.6}
           minZoom={0.1}
