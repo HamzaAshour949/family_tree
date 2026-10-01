@@ -54,9 +54,9 @@ export function TimelineView() {
               type="button"
             >
               <span className="timeline-year">{event.year}</span>
-              <span>
+              <span className="timeline-copy">
                 <strong>{event.title}</strong>
-                <span className="muted-text">{event.detail}</span>
+                {event.detail ? <span className="muted-text">{event.detail}</span> : null}
               </span>
               <span className="status-chip">{person ? personName(person, familyText) : t(KIND_LABEL[event.kind])}</span>
             </button>

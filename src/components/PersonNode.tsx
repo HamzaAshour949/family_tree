@@ -52,21 +52,21 @@ export const PersonNode = memo((props: NodeProps) => {
         </div>
         <div className="node-chip-row">
           {data.person.occupation ? (
-            <span className="node-chip">
+            <span className="node-chip" title={data.person.occupation}>
               <BriefcaseBusiness size={13} />
-              {data.person.occupation}
+              <span className="node-chip-text">{data.person.occupation}</span>
             </span>
           ) : null}
           {data.showLinkCounts ? (
-            <span className="node-chip">
+            <span className="node-chip count-chip">
               <UsersRound size={13} />
-              {familyText.linksCount(data.relationshipCount)}
+              <span className="node-chip-text">{familyText.linksCount(data.relationshipCount)}</span>
             </span>
           ) : null}
           {data.person.birthDate ? (
-            <span className="node-chip">
+            <span className="node-chip date-chip">
               <CalendarDays size={13} />
-              {data.person.birthDate}
+              <span className="node-chip-text">{data.person.birthDate}</span>
             </span>
           ) : null}
         </div>

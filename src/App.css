@@ -848,6 +848,44 @@ button {
   padding: 10px;
 }
 
+/*
+ * Compact cards have to fit the compact grid (see COMPACT in layout.ts). At
+ * the full-size avatar a two-word name wrapped onto a second line and the
+ * chips onto a third, making "compact" cards taller than comfortable ones and
+ * crowding them into the row below.
+ */
+.person-node.compact .person-card-head {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.person-node.compact .person-avatar {
+  width: 36px;
+  height: 36px;
+}
+
+.person-node.compact .person-name {
+  font-size: 0.86rem;
+  line-height: 1.2;
+}
+
+.person-node.compact .gender-marker {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 0.66rem;
+}
+
+.person-node.compact .node-chip-row {
+  flex-wrap: nowrap;
+  margin-top: 8px;
+}
+
+/* The card's own date line already gives the year. */
+.person-node.compact .date-chip {
+  display: none;
+}
+
 .person-node.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow);
@@ -955,11 +993,14 @@ button {
   font-size: 0.74rem;
 }
 
+/* At most two rows of chips, so a long occupation cannot stretch a card into the row below. */
 .node-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-height: 54px;
   margin-top: 10px;
+  overflow: hidden;
 }
 
 .node-chip,
@@ -974,6 +1015,29 @@ button {
   color: var(--muted);
   background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
   font-size: 0.72rem;
+}
+
+.node-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.node-chip svg {
+  flex: none;
+}
+
+/* Short and always worth reading: a long occupation gives way instead. */
+.node-chip.count-chip,
+.node-chip.date-chip {
+  flex-shrink: 0;
+}
+
+.node-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- lists */
@@ -1039,6 +1103,13 @@ button {
   color: var(--accent);
   font-size: 1rem;
   font-weight: 780;
+}
+
+/* Title above its detail; inline, "Yusuf Nasser born" ran straight into "Birthplace: Damascus". */
+.timeline-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .empty-state {
