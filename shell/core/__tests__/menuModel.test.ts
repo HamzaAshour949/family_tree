@@ -23,7 +23,7 @@ function flatten(items: MenuItem[]): MenuItem[] {
   return items.flatMap((item) => (item.kind === "submenu" ? [item, ...flatten(item.items)] : [item]));
 }
 
-const model = (platform: DesktopPlatform, devTools = false, strings = DEFAULT_SHELL_STRINGS) => buildMenuModel(strings, { platform, devTools });
+const model = (platform: DesktopPlatform, devTools = false, strings = DEFAULT_SHELL_STRINGS) => buildMenuModel(strings, { platform, devTools, appName: "Family Tree Studio" });
 const actions = (items: MenuItem[]) => flatten(items).flatMap((item) => (item.kind === "action" ? [item] : []));
 
 describe("buildMenuModel", () => {
@@ -44,16 +44,34 @@ describe("buildMenuModel", () => {
   });
 
   it("adds the application menu on macOS only", () => {
-    expect(model("darwin")[0]).toEqual({ kind: "role", role: "appMenu" });
-    expect(model("linux")[0]?.kind).toBe("submenu");
+    const first = model("darwin")[0];
+    expect(first).toMatchObject({ kind: "submenu", label: "Family Tree Studio" });
+    const roles = first?.kind === "submenu" ? first.items.flatMap((item) => (item.kind === "role" ? [item.role] : [])) : [];
+    expect(roles).toEqual(["about", "services", "hide", "hideOthers", "unhide", "quit"]);
+    expect(model("linux")[0]).toMatchObject({ kind: "submenu", label: DEFAULT_SHELL_STRINGS.menuFile });
   });
 
-  it("offers quit on Windows and Linux and close on macOS", () => {
-    const roles = (platform: DesktopPlatform) => flatten(model(platform)).flatMap((item) => (item.kind === "role" ? [item.role] : []));
-    expect(roles("linux")).toContain("quit");
-    expect(roles("linux")).not.toContain("close");
-    expect(roles("darwin")).toContain("close");
-    expect(roles("darwin")).not.toContain("quit");
+  it("marks the Window menu so macOS can list open windows in it", () => {
+    expect(model("darwin").at(-1)).toMatchObject({ kind: "submenu", role: "window", label: DEFAULT_SHELL_STRINGS.menuWindow });
+  });
+
+  it("translates the built-in commands too, with the app's name filled in", () => {
+    const roleLabels = flatten(model("darwin", true, shellStringsByLanguage.ar)).flatMap((item) => (item.kind === "role" ? [item.label] : []));
+    expect(roleLabels).toContain("قص");
+    expect(roleLabels).toContain("إنهاء Family Tree Studio");
+    // No built-in item falls back to an English default.
+    const english = new Set(Object.values(DEFAULT_SHELL_STRINGS).map((label) => label.replaceAll("{name}", "Family Tree Studio")));
+    expect(roleLabels.filter((label) => english.has(label))).toEqual([]);
+  });
+
+  it("ends the File menu with quit on Windows and Linux and close on macOS", () => {
+    const fileRoles = (platform: DesktopPlatform) => {
+      const file = model(platform).find((item) => item.kind === "submenu" && item.label === DEFAULT_SHELL_STRINGS.menuFile);
+      return file?.kind === "submenu" ? file.items.flatMap((item) => (item.kind === "role" ? [item.role] : [])) : [];
+    };
+    expect(fileRoles("linux")).toEqual(["quit"]);
+    expect(fileRoles("win32")).toEqual(["quit"]);
+    expect(fileRoles("darwin")).toEqual(["close"]);
   });
 
   it("only includes developer tools when asked", () => {

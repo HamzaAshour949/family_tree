@@ -6,8 +6,11 @@ import type { DesktopPlatform, MenuAction, ShellStrings } from "../../shared/des
  * independent of any toolkit and can be tested as plain values.
  */
 export type MenuRole =
-  | "appMenu"
-  | "windowMenu"
+  | "about"
+  | "services"
+  | "hide"
+  | "hideOthers"
+  | "unhide"
   | "close"
   | "quit"
   | "cut"
@@ -18,24 +21,35 @@ export type MenuRole =
   | "zoomIn"
   | "zoomOut"
   | "togglefullscreen"
-  | "toggleDevTools";
+  | "toggleDevTools"
+  | "minimize"
+  | "zoom"
+  | "front";
 
+/**
+ * Built-in commands keep their native behaviour through `role`, but always
+ * carry a label: left to the toolkit, they stay in English whatever the
+ * interface language, which left the Arabic menu half translated.
+ */
 export type MenuItem =
   | { kind: "action"; action: MenuAction; label: string; accelerator?: string }
-  | { kind: "role"; role: MenuRole }
+  | { kind: "role"; role: MenuRole; label: string }
   | { kind: "separator" }
-  | { kind: "submenu"; label: string; items: MenuItem[] };
+  /** `role: "window"` marks the menu macOS lists open windows in. */
+  | { kind: "submenu"; label: string; items: MenuItem[]; role?: "window" };
 
 interface MenuOptions {
   platform: DesktopPlatform;
   /** Developer tools are only offered in unpackaged builds. */
   devTools: boolean;
+  /** Replaces `{name}` in labels such as "Quit {name}". */
+  appName: string;
 }
 
-export function buildMenuModel(strings: ShellStrings, { platform, devTools }: MenuOptions): MenuItem[] {
+export function buildMenuModel(strings: ShellStrings, { platform, devTools, appName }: MenuOptions): MenuItem[] {
   const isMac = platform === "darwin";
   const action = (name: MenuAction, label: string, accelerator?: string): MenuItem => ({ kind: "action", action: name, label, accelerator });
-  const role = (name: MenuRole): MenuItem => ({ kind: "role", role: name });
+  const role = (name: MenuRole, label: string): MenuItem => ({ kind: "role", role: name, label: label.replaceAll("{name}", appName) });
   const separator: MenuItem = { kind: "separator" };
 
   const view: MenuItem[] = [
@@ -44,16 +58,42 @@ export function buildMenuModel(strings: ShellStrings, { platform, devTools }: Me
     separator,
     action("toggle-theme", strings.menuToggleTheme, "CmdOrCtrl+Shift+L"),
     separator,
-    role("resetZoom"),
-    role("zoomIn"),
-    role("zoomOut"),
+    role("resetZoom", strings.menuActualSize),
+    role("zoomIn", strings.menuZoomIn),
+    role("zoomOut", strings.menuZoomOut),
     separator,
-    role("togglefullscreen"),
-    ...(devTools ? [role("toggleDevTools")] : []),
+    role("togglefullscreen", strings.menuFullScreen),
+    ...(devTools ? [role("toggleDevTools", strings.menuDevTools)] : []),
   ];
 
+  // macOS titles this menu with the app's name whatever label it is given.
+  const appMenu: MenuItem = {
+    kind: "submenu",
+    label: appName,
+    items: [
+      role("about", strings.menuAbout),
+      separator,
+      role("services", strings.menuServices),
+      separator,
+      role("hide", strings.menuHide),
+      role("hideOthers", strings.menuHideOthers),
+      role("unhide", strings.menuShowAll),
+      separator,
+      role("quit", strings.menuQuit),
+    ],
+  };
+
+  const windowMenu: MenuItem = {
+    kind: "submenu",
+    label: strings.menuWindow,
+    role: "window",
+    items: isMac
+      ? [role("minimize", strings.menuMinimize), role("zoom", strings.menuZoomWindow), separator, role("front", strings.menuBringAllToFront)]
+      : [role("minimize", strings.menuMinimize), role("close", strings.menuCloseWindow)],
+  };
+
   return [
-    ...(isMac ? [role("appMenu")] : []),
+    ...(isMac ? [appMenu] : []),
     {
       kind: "submenu",
       label: strings.menuFile,
@@ -74,7 +114,7 @@ export function buildMenuModel(strings: ShellStrings, { platform, devTools }: Me
           ],
         },
         separator,
-        role(isMac ? "close" : "quit"),
+        isMac ? role("close", strings.menuCloseWindow) : role("quit", strings.menuExit),
       ],
     },
     {
@@ -87,10 +127,10 @@ export function buildMenuModel(strings: ShellStrings, { platform, devTools }: Me
         action("undo", strings.menuUndo, "CmdOrCtrl+Z"),
         action("redo", strings.menuRedo, isMac ? "Shift+Cmd+Z" : "Ctrl+Y"),
         separator,
-        role("cut"),
-        role("copy"),
-        role("paste"),
-        role("selectAll"),
+        role("cut", strings.menuCut),
+        role("copy", strings.menuCopy),
+        role("paste", strings.menuPaste),
+        role("selectAll", strings.menuSelectAll),
       ],
     },
     { kind: "submenu", label: strings.menuView, items: view },
@@ -99,6 +139,6 @@ export function buildMenuModel(strings: ShellStrings, { platform, devTools }: Me
       label: strings.menuFamily,
       items: [action("add-person", strings.menuAddPerson, "CmdOrCtrl+Shift+N")],
     },
-    role("windowMenu"),
+    windowMenu,
   ];
 }

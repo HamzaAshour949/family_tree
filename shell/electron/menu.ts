@@ -12,11 +12,11 @@ function convert(item: MenuItem, onAction: (action: MenuAction) => void): MenuIt
     case "separator":
       return { type: "separator" };
     case "role":
-      // The role names in the model are Electron's own.
-      return { role: item.role };
+      // The role names in the model are Electron's own; the label overrides its English default.
+      return { role: item.role, label: item.label };
     case "action":
       return { label: item.label, accelerator: item.accelerator, click: () => onAction(item.action) };
     case "submenu":
-      return { label: item.label, submenu: item.items.map((child) => convert(child, onAction)) };
+      return { label: item.label, role: item.role, submenu: item.items.map((child) => convert(child, onAction)) };
   }
 }

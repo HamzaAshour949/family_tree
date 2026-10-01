@@ -484,6 +484,6 @@ function send(action: MenuAction): void {
 }
 
 function applyMenu(): void {
-  const model = buildMenuModel(shellStrings, { platform, devTools: !app.isPackaged });
+  const model = buildMenuModel(shellStrings, { platform, devTools: !app.isPackaged, appName: app.getName() });
   Menu.setApplicationMenu(toElectronMenu(model, send));
 }
