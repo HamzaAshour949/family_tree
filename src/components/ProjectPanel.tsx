@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { CalendarClock, Network, Plus, UsersRound } from "lucide-react";
-import { useI18n } from "../i18n";
+import { contentDirection, useI18n } from "../i18n";
 import { timelineEvents } from "../lib/family";
 import { useFamilyStore } from "../store/familyStore";
 
@@ -23,11 +23,11 @@ export function ProjectPanel() {
         <div className="field-stack">
           <label className="field-label">
             {t("name")}
-            <input onChange={(event) => updateProjectMeta({ name: event.currentTarget.value })} value={project.name} />
+            <input dir={contentDirection(project.name)} onChange={(event) => updateProjectMeta({ name: event.currentTarget.value })} value={project.name} />
           </label>
           <label className="field-label">
             {t("description")}
-            <textarea onChange={(event) => updateProjectMeta({ description: event.currentTarget.value })} value={project.description} />
+            <textarea dir={contentDirection(project.description)} onChange={(event) => updateProjectMeta({ description: event.currentTarget.value })} value={project.description} />
           </label>
         </div>
       </section>

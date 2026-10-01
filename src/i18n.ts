@@ -4,6 +4,15 @@ import { useFamilyStore } from "./store/familyStore";
 
 export { isRtl, languageOptions, translate, type TranslationKey };
 
+/**
+ * For a field holding the user's own text: its direction follows what was
+ * typed, so an English description in the Arabic interface keeps its full stop
+ * at the end. An empty field keeps the interface's direction for the caret.
+ */
+export function contentDirection(value: string | undefined): "auto" | undefined {
+  return value ? "auto" : undefined;
+}
+
 export function useI18n() {
   const language = useFamilyStore((state) => state.language);
   const setLanguage = useFamilyStore((state) => state.setLanguage);

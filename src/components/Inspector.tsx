@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Heart, Plus, Trash2, UserPlus, X } from "lucide-react";
-import { type TranslationKey, useI18n } from "../i18n";
+import { contentDirection, type TranslationKey, useI18n } from "../i18n";
 import { ageLabel, peopleById, personName, yearFromDate } from "../lib/family";
 import { confirmAction } from "../lib/confirm";
 import { useFamilyStore, type RelativeKind } from "../store/familyStore";
@@ -69,6 +69,9 @@ export function Inspector({ onStatus }: InspectorProps) {
     return { parents, spouses, children };
   }, [directory, project.relationships, selectedPersonId]);
   const selectablePeople = useMemo(() => project.people.filter((person) => person.id !== selectedPersonId), [project.people, selectedPersonId]);
+  // A person has at most one father and one mother, so those offers go once filled.
+  const hasFather = groups.parents.some((entry) => entry.person.gender === "male");
+  const hasMother = groups.parents.some((entry) => entry.person.gender === "female");
 
   if (!selectedPerson) {
     return (
@@ -157,8 +160,8 @@ export function Inspector({ onStatus }: InspectorProps) {
 
         <div className="field-stack">
           <div className="field-grid">
-            <label className="field-label">{t("firstName")}<input onChange={(event) => patchPerson({ firstName: event.currentTarget.value })} ref={firstNameRef} value={activePerson.firstName} /></label>
-            <label className="field-label">{t("lastName")}<input onChange={(event) => patchPerson({ lastName: event.currentTarget.value })} value={activePerson.lastName} /></label>
+            <label className="field-label">{t("firstName")}<input dir={contentDirection(activePerson.firstName)} onChange={(event) => patchPerson({ firstName: event.currentTarget.value })} ref={firstNameRef} value={activePerson.firstName} /></label>
+            <label className="field-label">{t("lastName")}<input dir={contentDirection(activePerson.lastName)} onChange={(event) => patchPerson({ lastName: event.currentTarget.value })} value={activePerson.lastName} /></label>
           </div>
           <div className="field-grid">
             <label className="field-label">
@@ -168,7 +171,7 @@ export function Inspector({ onStatus }: InspectorProps) {
                 <option value="male">{t("male")}</option>
               </select>
             </label>
-            <label className="field-label">{t("occupation")}<input onChange={(event) => patchPerson({ occupation: event.currentTarget.value })} value={activePerson.occupation ?? ""} /></label>
+            <label className="field-label">{t("occupation")}<input dir={contentDirection(activePerson.occupation)} onChange={(event) => patchPerson({ occupation: event.currentTarget.value })} value={activePerson.occupation ?? ""} /></label>
           </div>
           <div className="field-grid">
             <label className="field-label">{t("birthDate")}<input max={activePerson.deathDate || undefined} onChange={(event) => patchPerson({ birthDate: event.currentTarget.value })} type="date" value={activePerson.birthDate ?? ""} /></label>
@@ -179,20 +182,20 @@ export function Inspector({ onStatus }: InspectorProps) {
             {t("stillAlive")}
           </label>
           <div className="field-grid">
-            <label className="field-label">{t("birthPlace")}<input onChange={(event) => patchPerson({ birthPlace: event.currentTarget.value })} value={activePerson.birthPlace ?? ""} /></label>
-            <label className="field-label">{t("deathPlace")}<input disabled={!isDeceased} onChange={(event) => patchPerson({ deathPlace: event.currentTarget.value })} value={activePerson.deathPlace ?? ""} /></label>
+            <label className="field-label">{t("birthPlace")}<input dir={contentDirection(activePerson.birthPlace)} onChange={(event) => patchPerson({ birthPlace: event.currentTarget.value })} value={activePerson.birthPlace ?? ""} /></label>
+            <label className="field-label">{t("deathPlace")}<input dir={contentDirection(activePerson.deathPlace)} disabled={!isDeceased} onChange={(event) => patchPerson({ deathPlace: event.currentTarget.value })} value={activePerson.deathPlace ?? ""} /></label>
           </div>
           <label className="field-label">{t("photoUrl")}<input dir="ltr" inputMode="url" onChange={(event) => patchPerson({ photoUrl: event.currentTarget.value })} placeholder="https://" value={activePerson.photoUrl ?? ""} /></label>
-          <label className="field-label">{t("tags")}<input onChange={(event) => patchPerson({ tags: splitTags(event.currentTarget.value) })} value={activePerson.tags.join(", ")} /></label>
-          <label className="field-label">{t("notes")}<textarea onChange={(event) => patchPerson({ notes: event.currentTarget.value })} value={activePerson.notes ?? ""} /></label>
+          <label className="field-label">{t("tags")}<input dir={contentDirection(activePerson.tags.join(", "))} onChange={(event) => patchPerson({ tags: splitTags(event.currentTarget.value) })} value={activePerson.tags.join(", ")} /></label>
+          <label className="field-label">{t("notes")}<textarea dir={contentDirection(activePerson.notes)} onChange={(event) => patchPerson({ notes: event.currentTarget.value })} value={activePerson.notes ?? ""} /></label>
         </div>
       </section>
 
       <section className="panel-section">
         <h2 className="panel-title">{t("relationships")}</h2>
         <div className="quick-add">
-          <button className="text-button" onClick={() => quickAdd("father")} type="button"><Plus size={14} />{t("addFather")}</button>
-          <button className="text-button" onClick={() => quickAdd("mother")} type="button"><Plus size={14} />{t("addMother")}</button>
+          {hasFather ? null : <button className="text-button" onClick={() => quickAdd("father")} type="button"><Plus size={14} />{t("addFather")}</button>}
+          {hasMother ? null : <button className="text-button" onClick={() => quickAdd("mother")} type="button"><Plus size={14} />{t("addMother")}</button>}
           <button className="text-button" onClick={() => quickAdd("son")} type="button"><Plus size={14} />{t("addSon")}</button>
           <button className="text-button" onClick={() => quickAdd("daughter")} type="button"><Plus size={14} />{t("addDaughter")}</button>
           <button className="text-button" onClick={() => quickAdd("spouse")} type="button"><Heart size={14} />{spouseWord}</button>
@@ -202,8 +205,8 @@ export function Inspector({ onStatus }: InspectorProps) {
         <details className="link-existing">
           <summary>{t("linkExisting")}</summary>
           <div className="field-stack">
-            <RelationshipPicker label={t("addFather")} onPick={(parentId) => link("parent-child", parentId, activePerson.id)} people={selectablePeople.filter((person) => person.gender === "male")} />
-            <RelationshipPicker label={t("addMother")} onPick={(parentId) => link("parent-child", parentId, activePerson.id)} people={selectablePeople.filter((person) => person.gender === "female")} />
+            {hasFather ? null : <RelationshipPicker label={t("addFather")} onPick={(parentId) => link("parent-child", parentId, activePerson.id)} people={selectablePeople.filter((person) => person.gender === "male")} />}
+            {hasMother ? null : <RelationshipPicker label={t("addMother")} onPick={(parentId) => link("parent-child", parentId, activePerson.id)} people={selectablePeople.filter((person) => person.gender === "female")} />}
             <RelationshipPicker label={t("addChild")} onPick={(childId) => link("parent-child", activePerson.id, childId)} people={selectablePeople} />
             <RelationshipPicker label={t("addSpouse")} onPick={(spouseId) => link("spouse", activePerson.id, spouseId)} people={selectablePeople.filter((person) => person.gender !== activePerson.gender)} />
           </div>

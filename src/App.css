@@ -1207,3 +1207,11 @@ button {
   font-family:
     "SF Arabic", "Geeza Pro", "Noto Naskh Arabic", "Amiri", Inter, ui-sans-serif, system-ui, sans-serif;
 }
+
+/*
+ * A field holding Latin text reads left to right (so its punctuation lands in
+ * the right place) but stays aligned with the right-to-left form around it.
+ */
+:root[dir="rtl"] :is(input, textarea)[dir="auto"] {
+  text-align: right;
+}

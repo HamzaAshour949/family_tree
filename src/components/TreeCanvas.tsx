@@ -27,6 +27,12 @@ const EMPTY_MEASUREMENTS = new Map<string, Measured>();
 const MENU_WIDTH = 216;
 const MENU_ITEM_HEIGHT = 38;
 const GENDER_COLOR = { female: "#d93f6f", male: "#2f80ed" } as const;
+/**
+ * Fit-to-view keeps a fixed band clear under the floating canvas buttons. A
+ * plain fraction of the canvas shrank to almost nothing on a wide tree in a
+ * small window and left the top row of cards underneath them.
+ */
+const FIT_PADDING = { top: "76px", bottom: "40px", x: "6%" } as const;
 
 export function TreeCanvas({ exportRef, onOpen, onOpenSample, onStatus }: TreeCanvasProps) {
   const { t } = useI18n();
@@ -159,6 +165,13 @@ export function TreeCanvas({ exportRef, onOpen, onOpenSample, onStatus }: TreeCa
   );
   const translateExtent = useMemo(() => flowExtentFromNodes(nodes, metrics), [metrics, nodes]);
   const contextPerson = contextMenu?.nodeId ? people.find((person) => person.id === contextMenu.nodeId) : undefined;
+  const contextParents = useMemo(() => {
+    if (!contextPerson) return { father: false, mother: false };
+    const genders = relationships
+      .filter((relationship) => relationship.type === "parent-child" && relationship.to === contextPerson.id)
+      .map((relationship) => people.find((person) => person.id === relationship.from)?.gender);
+    return { father: genders.includes("male"), mother: genders.includes("female") };
+  }, [contextPerson, people, relationships]);
   const isEmpty = people.length === 0;
 
   function openPaneContextMenu(event: ReactMouseEvent | MouseEvent) {
@@ -185,7 +198,7 @@ export function TreeCanvas({ exportRef, onOpen, onOpenSample, onStatus }: TreeCa
     if (!result.ok) onStatus(t(result.reason as TranslationKey));
   }
 
-  const menuItems = contextPerson ? 5 : 1;
+  const menuItems = contextPerson ? 3 + Number(!contextParents.father) + Number(!contextParents.mother) : 1;
   const menuStyle = contextMenu
     ? {
         left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - MENU_WIDTH - 8)),
@@ -263,8 +276,8 @@ export function TreeCanvas({ exportRef, onOpen, onOpenSample, onStatus }: TreeCa
         <div className="context-menu no-export" onContextMenu={(event) => event.preventDefault()} role="menu" style={menuStyle}>
           {contextPerson ? (
             <>
-              <button onClick={() => createRelatedPerson("father")} role="menuitem" type="button"><UserPlus size={15} />{t("addFather")}</button>
-              <button onClick={() => createRelatedPerson("mother")} role="menuitem" type="button"><UserPlus size={15} />{t("addMother")}</button>
+              {contextParents.father ? null : <button onClick={() => createRelatedPerson("father")} role="menuitem" type="button"><UserPlus size={15} />{t("addFather")}</button>}
+              {contextParents.mother ? null : <button onClick={() => createRelatedPerson("mother")} role="menuitem" type="button"><UserPlus size={15} />{t("addMother")}</button>}
               <button onClick={() => createRelatedPerson("son")} role="menuitem" type="button"><Plus size={15} />{t("addSon")}</button>
               <button onClick={() => createRelatedPerson("daughter")} role="menuitem" type="button"><Plus size={15} />{t("addDaughter")}</button>
               <button onClick={() => createRelatedPerson("spouse")} role="menuitem" type="button"><Heart size={15} />{contextPerson.gender === "male" ? t("addWife") : t("addHusband")}</button>
@@ -321,7 +334,7 @@ function ViewportController({ fitKey, focusId, metrics, positions }: ViewportCon
   useEffect(() => {
     if (!initialized || fittedFor.current === fitKey) return;
     fittedFor.current = fitKey;
-    void fitView({ padding: 0.16, maxZoom: 1, duration: 0 });
+    void fitView({ padding: FIT_PADDING, maxZoom: 1, duration: 0 });
   }, [fitKey, fitView, initialized]);
 
   useEffect(() => {

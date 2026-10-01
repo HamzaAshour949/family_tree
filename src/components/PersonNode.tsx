@@ -47,7 +47,7 @@ export const PersonNode = memo((props: NodeProps) => {
             <p className="person-meta">{lifeLabel(data.person, familyText)}</p>
           </div>
           <span className={`gender-marker ${data.person.gender}`} aria-label={t(data.person.gender)}>
-            {data.person.gender === "female" ? "F" : "M"}
+            {t(data.person.gender === "female" ? "genderBadgeFemale" : "genderBadgeMale")}
           </span>
         </div>
         <div className="node-chip-row">
