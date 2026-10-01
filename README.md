@@ -106,7 +106,12 @@ There is no auto-update: nothing in the app talks to a server.
   siblings stay together, ordered by birth date, under their parents; parents
   centre over their children; a husband with several wives keeps each wife's
   children under her; a married-in spouse sits beside their partner while their
-  own parents settle next to the family. Unconnected families sit side by side.
+  own parents settle next to the family; a parent with no recorded ancestry - a
+  mother added later, an in-law's parents - sits just above their children
+  rather than on the top row. Unconnected families sit side by side.
+- **Family lines** - each couple's children hang from one line that drops from
+  the middle of their marriage line, and every family between two rows gets
+  its own rail, so the children of one wife are never drawn as another's.
 - **Undo and redo** - every edit, with typing folded into one step. Undoing back
   to the saved state clears the "unsaved" mark.
 - **Two views** - the tree canvas and a chronological timeline of births,
@@ -114,8 +119,11 @@ There is no auto-update: nothing in the app talks to a server.
 - **Search and filter** across every text field - accent-insensitive in Latin
   script and tolerant of Arabic spelling variants - plus a gender filter.
 - **Export** the whole tree - not just what is on screen - to PNG, SVG or PDF.
-- **English and Arabic**, with full right-to-left layout. Native menus and
-  dialogs follow the interface language.
+  SVG files carry only the styles the picture needs (about 200 KB for the
+  sample).
+- **English and Arabic**, with full right-to-left layout. Native menus -
+  including the standard Edit, View and Window items - and dialogs follow the
+  interface language.
 - **Dark and light themes**, following the system preference on first launch.
 - **Safe saving** - files are written atomically, so a crash or a full disk
   never leaves a half-written project. The window remembers its size.
