@@ -19,9 +19,10 @@
  * `--no-sandbox`: extra arguments are forwarded to Electron.
  */
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { createRequire } from "node:module";
 
@@ -31,8 +32,14 @@ const packagedApp = process.env.SMOKE_APP;
 const electron = packagedApp ?? createRequire(import.meta.url)("electron");
 const DEBUG_PORT = Number(process.env.SMOKE_PORT ?? 9222);
 const READY_TIMEOUT_MS = 30_000;
-/** Relative on purpose: it is resolved against this process's working directory by the main process. */
-const LAUNCH_FILE = "examples/sample-family.ftree";
+const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * Relative on purpose: the main process resolves it against the directory the
+ * app was started from. It names a copy of the sample in a scratch directory,
+ * never the repository's own file - a run that fails half way through an edit
+ * must not be able to write to it.
+ */
+const LAUNCH_FILE = "sample-family.ftree";
 const BRIDGE_CALLS = [
   "confirm",
   "exportFile",
@@ -50,10 +57,12 @@ let nextMessageId = 0;
 
 // A private profile keeps this run out of the user's own single-instance lock and settings.
 const profile = mkdtempSync(join(tmpdir(), "fts-smoke-"));
+const workDir = mkdtempSync(join(tmpdir(), "fts-smoke-work-"));
+copyFileSync(join(REPO, "examples", "sample-family.ftree"), join(workDir, LAUNCH_FILE));
 const app = spawn(
   electron,
-  [`--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`, ...process.argv.slice(2), ...(packagedApp ? [] : ["."]), LAUNCH_FILE],
-  { stdio: "inherit" },
+  [`--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`, ...process.argv.slice(2), ...(packagedApp ? [] : [REPO]), LAUNCH_FILE],
+  { cwd: workDir, stdio: "inherit" },
 );
 let socket;
 
@@ -115,6 +124,7 @@ try {
   await shutDown(app);
   // Electron may still be flushing files for a moment after it exits.
   rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 const failed = checks.filter((check) => !check.ok);
@@ -123,11 +133,16 @@ console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`)
 if (failed.length > 0 && pageLog.length > 0) console.log(`\npage warnings and errors:\n${[...new Set(pageLog)].slice(0, 15).join("\n")}`);
 process.exit(failed.length === 0 ? 0 : 1);
 
-/** Stops the app and waits for it to be gone, so its profile is no longer being written to. */
+/**
+ * Stops the app and waits for it to be gone, so its profile is no longer being
+ * written to. It is killed outright: asked to quit politely after a check
+ * failed half way through an edit, the app would raise its real "Save
+ * changes?" prompt on the desktop and wait for somebody to answer it.
+ */
 async function shutDown(child) {
   if (child.exitCode !== null) return;
   const exited = new Promise((resolve) => child.once("exit", resolve));
-  child.kill();
+  child.kill("SIGKILL");
   await Promise.race([exited, delay(10_000)]);
 }
 
