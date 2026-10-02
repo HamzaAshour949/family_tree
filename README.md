@@ -8,6 +8,13 @@ Built with Electron, React, TypeScript and React Flow.
 
 > No account, no license key, no network calls. Install it and start editing.
 
+![The sample family in the dark theme, with a profile open in the inspector](docs/screenshots/tree-dark.webp)
+
+| | |
+| --- | --- |
+| ![Light theme](docs/screenshots/tree-light.webp) | ![Timeline of births, deaths and marriages](docs/screenshots/timeline.webp) |
+| ![Arabic, right to left](docs/screenshots/arabic.webp) | |
+
 ---
 
 ## Quick start
