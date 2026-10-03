@@ -27,6 +27,7 @@ const bridge: DesktopBridge = {
   setDocumentState: (state: DocumentState) => ipcRenderer.send(IPC.setDocumentState, state),
   setShellStrings: (strings: ShellStrings) => ipcRenderer.send(IPC.setShellStrings, strings),
   reportSaveResult: (saved: boolean) => ipcRenderer.send(IPC.saveResult, saved),
+  keepRendering: (active: boolean) => ipcRenderer.send(IPC.keepRendering, active === true),
   onMenuAction: (listener) => subscribe<MenuAction>(IPC.menuAction, listener),
   onOpenFile: (listener) => subscribe<OpenedProjectFile>(IPC.openedFile, listener),
 };

@@ -43,6 +43,7 @@ const LAUNCH_FILE = "sample-family.ftree";
 const BRIDGE_CALLS = [
   "confirm",
   "exportFile",
+  "keepRendering",
   "onMenuAction",
   "onOpenFile",
   "openProject",
