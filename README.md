@@ -31,7 +31,7 @@ a restart.
 New projects open on a welcome screen with an **Explore the sample** button, or
 open `examples/sample-family.ftree` directly.
 
-Requires Node 20.19 or newer.
+Requires Node 22.12 or newer.
 
 ## Checks
 
