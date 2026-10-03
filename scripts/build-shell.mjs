@@ -26,7 +26,7 @@ export function electronConfig(entry) {
       minify: false,
       sourcemap: true,
       lib: { entry: { [entry]: `shell/electron/${entry}.ts` }, formats: ["cjs"] },
-      rollupOptions: { external: EXTERNAL, output: { entryFileNames: "[name].js" } },
+      rolldownOptions: { external: EXTERNAL, output: { entryFileNames: "[name].js" } },
     },
   };
 }
