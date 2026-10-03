@@ -24,6 +24,7 @@ export const IPC = {
   openedFile: "file:opened",
   takePendingFile: "file:take-pending",
   saveResult: "window:save-result",
+  keepRendering: "window:keep-rendering",
 } as const;
 
 export type DesktopPlatform = "darwin" | "win32" | "linux";
@@ -204,6 +205,12 @@ export interface DesktopBridge {
   setDocumentState: (state: DocumentState) => void;
   setShellStrings: (strings: ShellStrings) => void;
   reportSaveResult: (saved: boolean) => void;
+  /**
+   * While true, the page keeps drawing frames even when its window is hidden
+   * or covered. An export needs frames to finish, and would otherwise wait
+   * for the window to come back if the user switched away mid-export.
+   */
+  keepRendering: (active: boolean) => void;
   onMenuAction: (listener: (action: MenuAction) => void) => () => void;
   onOpenFile: (listener: (file: OpenedProjectFile) => void) => () => void;
 }

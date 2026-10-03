@@ -41,15 +41,16 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         // Keeps the heavy, rarely-changing libraries out of the app chunk so a
-        // code change does not invalidate megabytes of vendor bundle.
-        manualChunks: (id) => {
-          if (!id.includes("node_modules")) return undefined;
-          if (id.includes("@xyflow")) return "vendor-flow";
-          if (id.includes("react")) return "vendor-react";
-          return undefined;
+        // code change does not invalidate megabytes of vendor bundle. Groups
+        // are tried in order, so React Flow is claimed before the React group.
+        codeSplitting: {
+          groups: [
+            { name: "vendor-flow", test: /node_modules[\\/]@xyflow[\\/]/ },
+            { name: "vendor-react", test: /node_modules[\\/](react|react-dom|scheduler|lucide-react)[\\/]/ },
+          ],
         },
       },
     },

@@ -9,6 +9,12 @@ updates:
       # One reviewable PR for routine bumps; majors still arrive on their own.
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Node's type definitions follow the oldest Node the code runs on (the
+      # engines field), not the newest release: newer types would accept APIs
+      # that do not exist at runtime. Raise this major by hand with engines.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

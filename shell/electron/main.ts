@@ -369,6 +369,12 @@ function registerIpcHandlers(): void {
     pendingSaveAck?.(saved === true);
     pendingSaveAck = undefined;
   });
+
+  // Throttling stays on otherwise: an idle window in the background should
+  // cost nothing.
+  ipcMain.on(IPC.keepRendering, (event, active: unknown) => {
+    senderWindow(event)?.webContents.setBackgroundThrottling(active !== true);
+  });
 }
 
 /**

@@ -31,7 +31,7 @@ a restart.
 New projects open on a welcome screen with an **Explore the sample** button, or
 open `examples/sample-family.ftree` directly.
 
-Requires Node 20.19 or newer.
+Requires Node 22.12 or newer.
 
 ## Checks
 
@@ -67,7 +67,9 @@ AppImage does this on its own on systems without user namespaces.
 
 CI (`.github/workflows/ci.yml`) runs typecheck, tests and a build on Linux,
 Windows and macOS - the shell's file handling is platform specific, so its
-tests run natively on each - plus the smoke test on Linux.
+tests run natively on each. The smoke test runs on all three as well, both
+against the app run from source and against the app as electron-builder
+packages it (`SMOKE_APP=path/to/binary npm run smoke`).
 
 ## Building installers
 

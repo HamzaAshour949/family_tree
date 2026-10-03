@@ -25,15 +25,20 @@ interface PreparedExport {
 }
 
 export async function exportTreeElement(element: HTMLElement, projectName: string, format: ExportFormat): Promise<string | null> {
+  const bridge = desktop();
   const prepared = prepareExportElement(element);
   document.body.appendChild(prepared.host);
+  // Rasterising waits on the browser to decode an image, which it does not do
+  // for a hidden window: switching away mid-export used to stall it.
+  bridge.keepRendering(true);
   try {
     await document.fonts.ready;
     await nextFrame();
     await nextFrame();
     const data = await renderExport(prepared, format);
-    return await desktop().exportFile({ data, format, suggestedName: safeFileName(projectName) });
+    return await bridge.exportFile({ data, format, suggestedName: safeFileName(projectName) });
   } finally {
+    bridge.keepRendering(false);
     prepared.host.remove();
   }
 }
