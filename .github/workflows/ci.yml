@@ -26,8 +26,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -36,37 +36,92 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # Boots the real app under a virtual display and drives it. The renderer
-  # runs in Chromium's sandbox, which needs the setuid helper on a stock
-  # runner. Enabling it (rather than passing --no-sandbox) means the test also
-  # proves the app starts and works with the sandbox on.
+  # Boots the real app and drives it, on every platform. On Linux it runs under
+  # a virtual display, and the renderer's Chromium sandbox needs the setuid
+  # helper on a stock runner. Enabling it (rather than passing --no-sandbox)
+  # means the test also proves the app starts and works with the sandbox on.
   smoke:
-    name: Smoke test (Linux)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build
       # Electron's npm package no longer downloads its binary at install time;
-      # it fetches it the first time it is required. The helper below lives
+      # it fetches it the first time it is required. The sandbox helper lives
       # inside that download, so fetch it now.
       - name: Download the Electron binary
         run: node node_modules/electron/install.js
       - name: Enable Chromium's setuid sandbox helper
+        if: runner.os == 'Linux'
         run: |
           sudo chown root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       # Several launches, not one: a startup race that fails one launch in a few
       # is still a bug, and a single lucky run would hide it.
       - name: Smoke test (5 launches)
+        shell: bash
         run: |
           for attempt in 1 2 3 4 5; do
             echo "::group::smoke launch $attempt"
-            xvfb-run -a npm run smoke
+            if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a npm run smoke; else npm run smoke; fi
+            echo "::endgroup::"
+          done
+
+  # The same checks against the app as electron-builder packages it - the
+  # files, layout and Electron binary an installer actually ships - rather
+  # than the app run from source.
+  packaged:
+    name: Packaged app (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            package: --linux --dir
+            app: release/linux-unpacked/family-tree-studio
+          - os: windows-latest
+            package: --win --dir
+            app: release/win-unpacked/Family Tree Studio.exe
+          - os: macos-latest
+            # Ad-hoc signed, as the release workflow does without a certificate.
+            package: --mac --dir -c.mac.identity=-
+            app: release/mac-arm64/Family Tree Studio.app/Contents/MacOS/Family Tree Studio
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package (unpacked)
+        run: npx electron-builder ${{ matrix.package }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Enable the packaged app's setuid sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+      - name: Smoke test the packaged app (3 launches)
+        shell: bash
+        env:
+          SMOKE_APP: ${{ matrix.app }}
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::packaged launch $attempt"
+            if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a npm run smoke; else npm run smoke; fi
             echo "::endgroup::"
           done

@@ -21,14 +21,16 @@
 import { spawn } from "node:child_process";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { createRequire } from "node:module";
 
 // `SMOKE_APP` points the checks at an already packaged binary; without it the
-// app runs from source through the local Electron install.
-const packagedApp = process.env.SMOKE_APP;
+// app runs from source through the local Electron install. A relative path is
+// taken from where the test was started, not from the scratch directory the
+// app runs in.
+const packagedApp = process.env.SMOKE_APP ? resolve(process.env.SMOKE_APP) : undefined;
 const electron = packagedApp ?? createRequire(import.meta.url)("electron");
 const DEBUG_PORT = Number(process.env.SMOKE_PORT ?? 9222);
 const READY_TIMEOUT_MS = 30_000;
